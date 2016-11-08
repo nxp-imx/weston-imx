@@ -277,6 +277,7 @@ struct drm_output_state {
 	struct drm_pending_state *pending_state;
 	struct drm_output *output;
 	struct wl_list link;
+	enum dpms_enum dpms;
 	struct wl_list plane_list;
 };
 
@@ -353,13 +354,13 @@ struct drm_output {
 	/* Holds the properties for the connector */
 	struct drm_property_info props_conn[WDRM_CONNECTOR__COUNT];
 
-	enum dpms_enum dpms;
 	struct backlight *backlight;
 
 	int vblank_pending;
 	int page_flip_pending;
 	int destroy_pending;
 	int disable_pending;
+	int dpms_off_pending;
 
 	struct drm_fb *gbm_cursor_fb[2];
 	struct drm_plane *cursor_plane;
@@ -1162,6 +1163,7 @@ drm_output_state_alloc(struct drm_output *output,
 
 	assert(state);
 	state->output = output;
+	state->dpms = WESTON_DPMS_OFF;
 	state->pending_state = pending_state;
 	if (pending_state)
 		wl_list_insert(&pending_state->output_list, &state->link);
@@ -1239,6 +1241,30 @@ drm_output_state_free(struct drm_output_state *state)
 }
 
 /**
+ * Get output state to disable output
+ *
+ * Returns a pointer to an output_state object which can be used to disable
+ * an output (e.g. DPMS off).
+ *
+ * @param pending_state The pending state object owning this update
+ * @param output The output to disable
+ * @returns A drm_output_state to disable the output
+ */
+static struct drm_output_state *
+drm_output_get_disable_state(struct drm_pending_state *pending_state,
+			     struct drm_output *output)
+{
+	struct drm_output_state *output_state;
+
+	output_state = drm_output_state_duplicate(output->state_cur,
+						  pending_state,
+						  DRM_OUTPUT_STATE_CLEAR_PLANES);
+	output_state->dpms = WESTON_DPMS_OFF;
+
+	return output_state;
+}
+
+/**
  * Allocate a new drm_pending_state
  *
  * Allocate a new, empty, 'pending state' structure to be used across a
@@ -1310,6 +1336,8 @@ drm_pending_state_get_output(struct drm_pending_state *pending_state,
 	return NULL;
 }
 
+static int drm_pending_state_apply(struct drm_pending_state *state);
+
 /**
  * Mark a drm_output_state (the output's last state) as complete. This handles
  * any post-completion actions such as updating the repaint timer, disabling the
@@ -1319,6 +1347,7 @@ static void
 drm_output_update_complete(struct drm_output *output, uint32_t flags,
 			   unsigned int sec, unsigned int usec)
 {
+	struct drm_backend *b = to_drm_backend(output->base.compositor);
 	struct drm_plane_state *ps;
 	struct timespec ts;
 
@@ -1338,6 +1367,13 @@ drm_output_update_complete(struct drm_output *output, uint32_t flags,
 	} else if (output->disable_pending) {
 		weston_output_disable(&output->base);
 		output->disable_pending = 0;
+		output->dpms_off_pending = 0;
+		return;
+	} else if (output->dpms_off_pending) {
+		struct drm_pending_state *pending = drm_pending_state_alloc(b);
+		drm_output_get_disable_state(pending, output);
+		drm_pending_state_apply(pending);
+		output->dpms_off_pending = 0;
 		return;
 	}
 
@@ -1398,13 +1434,12 @@ drm_output_assign_state(struct drm_output_state *state,
 			output->page_flip_pending = 1;
 	}
 
-	if (output->dpms == WESTON_DPMS_ON) {
+	if (state->dpms == WESTON_DPMS_ON) {
 		wl_array_remove_uint32(&b->unused_connectors,
 				       output->connector_id);
 		wl_array_remove_uint32(&b->unused_crtcs, output->crtc_id);
 	}
 }
-
 
 static int
 drm_view_transform_supported(struct weston_view *ev)
@@ -1734,36 +1769,19 @@ drm_waitvblank_pipe(struct drm_output *output)
 }
 
 static int
-drm_output_repaint(struct weston_output *output_base,
-		   pixman_region32_t *damage,
-		   void *repaint_data)
+drm_output_apply_state(struct drm_output_state *state)
 {
-	struct drm_pending_state *pending_state = repaint_data;
-	struct drm_output_state *state = NULL;
-	struct drm_output *output = to_drm_output(output_base);
-	struct drm_backend *backend =
-		to_drm_backend(output->base.compositor);
+	struct drm_output *output = state->output;
+	struct drm_backend *backend = to_drm_backend(output->base.compositor);
 	struct drm_plane *scanout_plane = output->scanout_plane;
+	struct drm_property_info *dpms_prop =
+		&output->props_conn[WDRM_CONNECTOR_DPMS];
 	struct drm_plane_state *scanout_state;
 	struct drm_plane_state *ps;
 	struct drm_plane *p;
 	struct drm_mode *mode;
+	struct timespec now;
 	int ret = 0;
-
-	if (output->disable_pending || output->destroy_pending)
-		goto err;
-
-	assert(!output->state_last);
-
-	/* If planes have been disabled in the core, we might not have
-	 * hit assign_planes at all, so might not have valid output state
-	 * here. */
-	state = drm_pending_state_get_output(pending_state, output);
-	if (!state)
-		state = drm_output_state_duplicate(output->state_cur,
-						   pending_state,
-						   DRM_OUTPUT_STATE_CLEAR_PLANES);
-
 
 	/* If disable_planes is set then assign_planes() wasn't
 	 * called for this render, so we could still have a stale
@@ -1775,10 +1793,46 @@ drm_output_repaint(struct weston_output *output_base,
 		output->cursor_plane->base.y = INT32_MIN;
 	}
 
-	drm_output_render(state, damage);
-	scanout_state = drm_output_state_get_plane(state, scanout_plane);
-	if (!scanout_state || !scanout_state->fb)
-		goto err;
+	if (state->dpms != WESTON_DPMS_ON) {
+		wl_list_for_each(ps, &state->plane_list, link) {
+			p = ps->plane;
+			assert(ps->fb == NULL);
+			assert(ps->output == NULL);
+
+			if (p->type != WDRM_PLANE_TYPE_OVERLAY)
+				continue;
+
+
+			ret = drmModeSetPlane(backend->drm.fd, p->plane_id,
+					      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+			if (ret)
+				weston_log("drmModeSetPlane failed disable: %m\n");
+		}
+
+		if (output->cursor_plane) {
+			ret = drmModeSetCursor(backend->drm.fd, output->crtc_id,
+					       0, 0, 0);
+			if (ret)
+				weston_log("drmModeSetCursor failed disable: %m\n");
+		}
+
+		ret = drmModeSetCrtc(backend->drm.fd, output->crtc_id, 0, 0, 0,
+				     &output->connector_id, 0, NULL);
+		if (ret)
+			weston_log("drmModeSetCrtc failed disabling: %m\n");
+
+		drm_output_assign_state(state,
+					DRM_OUTPUT_STATE_UPDATE_SYNCHRONOUS);
+		weston_compositor_read_presentation_clock(output->base.compositor, &now);
+		weston_output_finish_frame(&output->base,
+					   &now,
+					   WP_PRESENTATION_FEEDBACK_KIND_HW_COMPLETION);
+
+		return 0;
+	}
+
+	scanout_state =
+		drm_output_state_get_existing_plane(state, scanout_plane);
 
 	/* The legacy SetCrtc API doesn't allow us to do scaling, and the
 	 * legacy PageFlip API doesn't allow us to do clipping either. */
@@ -1805,7 +1859,6 @@ drm_output_repaint(struct weston_output *output_base,
 			weston_log("set mode failed: %m\n");
 			goto err;
 		}
-		output_base->set_dpms(output_base, WESTON_DPMS_ON);
         }
 
 	if (drmModePageFlip(backend->drm.fd, output->crtc_id,
@@ -1871,13 +1924,101 @@ drm_output_repaint(struct weston_output *output_base,
 		}
 	}
 
+	if (dpms_prop->prop_id && state->dpms != output->state_cur->dpms) {
+		ret = drmModeConnectorSetProperty(backend->drm.fd,
+						  output->connector_id,
+						  dpms_prop->prop_id,
+						  state->dpms);
+		if (ret) {
+			weston_log("DRM: DPMS: failed property set for %s\n",
+				   output->base.name);
+		}
+	}
+
+	drm_output_assign_state(state, DRM_OUTPUT_STATE_UPDATE_ASYNCHRONOUS);
+
 	return 0;
 
 err:
 	output->cursor_view = NULL;
-
 	drm_output_state_free(state);
+	return -1;
+}
 
+static int
+drm_pending_state_apply(struct drm_pending_state *pending_state)
+{
+	struct drm_backend *b = pending_state->backend;
+	struct drm_output_state *output_state, *tmp;
+	uint32_t *unused;
+
+	if (b->state_invalid) {
+		/* If we need to reset all our state (e.g. because we've
+		 * just started, or just been VT-switched in), explicitly
+		 * disable all the CRTCs we aren't using. This also disables
+		 * all connectors on these CRTCs, so we don't need to do that
+		 * separately with the pre-atomic API. */
+		wl_array_for_each(unused, &b->unused_crtcs)
+			drmModeSetCrtc(b->drm.fd, *unused, 0, 0, 0, NULL, 0,
+				       NULL);
+	}
+
+	wl_list_for_each_safe(output_state, tmp, &pending_state->output_list,
+			      link) {
+		struct drm_output *output = output_state->output;
+		int ret;
+
+		ret = drm_output_apply_state(output_state);
+		if (ret != 0) {
+			weston_log("Couldn't apply state for output %s\n",
+				   output->base.name);
+		}
+	}
+
+	b->state_invalid = false;
+
+	assert(wl_list_empty(&pending_state->output_list));
+
+	drm_pending_state_free(pending_state);
+
+	return 0;
+}
+
+static int
+drm_output_repaint(struct weston_output *output_base,
+		   pixman_region32_t *damage,
+		   void *repaint_data)
+{
+	struct drm_pending_state *pending_state = repaint_data;
+	struct drm_output *output = to_drm_output(output_base);
+	struct drm_output_state *state = NULL;
+	struct drm_plane_state *scanout_state;
+
+	if (output->disable_pending || output->destroy_pending)
+		goto err;
+
+	assert(!output->state_last);
+
+	/* If planes have been disabled in the core, we might not have
+	 * hit assign_planes at all, so might not have valid output state
+	 * here. */
+	state = drm_pending_state_get_output(pending_state, output);
+	if (!state)
+		state = drm_output_state_duplicate(output->state_cur,
+						   pending_state,
+						   DRM_OUTPUT_STATE_CLEAR_PLANES);
+	state->dpms = WESTON_DPMS_ON;
+
+	drm_output_render(state, damage);
+	scanout_state = drm_output_state_get_plane(state,
+						   output->scanout_plane);
+	if (!scanout_state || !scanout_state->fb)
+		goto err;
+
+	return 0;
+
+err:
+	drm_output_state_free(state);
 	return -1;
 }
 
@@ -2002,6 +2143,9 @@ drm_output_update_msc(struct drm_output *output, unsigned int seq)
 }
 
 static void
+drm_output_destroy(struct weston_output *base);
+
+static void
 vblank_handler(int fd, unsigned int frame, unsigned int sec, unsigned int usec,
 	       void *data)
 {
@@ -2076,29 +2220,8 @@ drm_repaint_flush(struct weston_compositor *compositor, void *repaint_data)
 {
 	struct drm_backend *b = to_drm_backend(compositor);
 	struct drm_pending_state *pending_state = repaint_data;
-	struct drm_output_state *output_state, *tmp;
-	uint32_t *unused;
 
-	if (b->state_invalid) {
-		/* If we need to reset all our state (e.g. because we've
-		 * just started, or just been VT-switched in), explicitly
-		 * disable all the CRTCs we aren't using. This also disables
-		 * all connectors on these CRTCs, so we don't need to do that
-		 * separately with the pre-atomic API. */
-		wl_array_for_each(unused, &b->unused_crtcs)
-			drmModeSetCrtc(b->drm.fd, *unused, 0, 0, 0, NULL, 0,
-				       NULL);
-	}
-
-	wl_list_for_each_safe(output_state, tmp, &pending_state->output_list,
-			      link) {
-		drm_output_assign_state(output_state,
-					DRM_OUTPUT_STATE_UPDATE_ASYNCHRONOUS);
-	}
-
-	b->state_invalid = false;
-
-	drm_pending_state_free(pending_state);
+	drm_pending_state_apply(pending_state);
 	b->repaint_data = NULL;
 }
 
@@ -3154,9 +3277,6 @@ drm_output_find_special_plane(struct drm_backend *b, struct drm_output *output,
 static void
 drm_plane_destroy(struct drm_plane *plane)
 {
-	if (plane->plane_id > 0)
-		drmModeSetPlane(plane->backend->drm.fd, plane->plane_id,
-				0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 	drm_plane_state_free(plane->state_cur, true);
 	drm_property_info_free(plane->props, WDRM_PLANE__COUNT);
 	weston_plane_release(&plane->base);
@@ -3326,28 +3446,76 @@ drm_set_backlight(struct weston_output *output_base, uint32_t value)
 	backlight_set_brightness(output->backlight, new_brightness);
 }
 
+/**
+ * Power output on or off
+ *
+ * The DPMS/power level of an output is used to switch it on or off. This
+ * is DRM's hook for doing so, which can called either as part of repaint,
+ * or independently of the repaint loop.
+ *
+ * If we are called as part of repaint, we simply set the relevant bit in
+ * state and return.
+ */
 static void
 drm_set_dpms(struct weston_output *output_base, enum dpms_enum level)
 {
 	struct drm_output *output = to_drm_output(output_base);
-	struct weston_compositor *ec = output_base->compositor;
-	struct drm_backend *b = to_drm_backend(ec);
-	struct drm_property_info *prop =
-		&output->props_conn[WDRM_CONNECTOR_DPMS];
+	struct drm_backend *b = to_drm_backend(output_base->compositor);
+	struct drm_pending_state *pending_state = b->repaint_data;
+	struct drm_output_state *state;
 	int ret;
 
-	if (!prop->prop_id)
+	if (output->state_cur->dpms == level)
 		return;
 
-	ret = drmModeConnectorSetProperty(b->drm.fd, output->connector_id,
-					  prop->prop_id, level);
-	if (ret) {
-		weston_log("DRM: DPMS: failed property set for %s\n",
-			   output->base.name);
+	/* If we're being called during the repaint loop, then this is
+	 * simple: discard any previously-generated state, and create a new
+	 * state where we disable everything. When we come to flush, this
+	 * will be applied.
+	 *
+	 * However, we need to be careful: we can be called whilst another
+	 * output is in its repaint cycle (pending_state exists), but our
+	 * output still has an incomplete state application outstanding.
+	 * In that case, we need to wait until that completes. */
+	if (pending_state && !output->state_last) {
+		/* The repaint loop already sets DPMS on; we don't need to
+		 * explicitly set it on here, as it will already happen
+		 * whilst applying the repaint state. */
+		if (level == WESTON_DPMS_ON)
+			return;
+
+		state = drm_pending_state_get_output(pending_state, output);
+		if (state)
+			drm_output_state_free(state);
+		state = drm_output_get_disable_state(pending_state, output);
+		state->dpms = level;
 		return;
 	}
 
-	output->dpms = level;
+	/* As we throw everything away when disabling, just send us back through
+	 * a repaint cycle. */
+	if (level == WESTON_DPMS_ON) {
+		if (output->dpms_off_pending)
+			output->dpms_off_pending = 0;
+		weston_output_schedule_repaint(output_base);
+		return;
+	}
+
+	if (output->state_cur->dpms == WESTON_DPMS_OFF)
+		return;
+
+	/* If we've already got a request in the pipeline, then we need to
+	 * park our DPMS request until that request has quiesced. */
+	if (output->state_last) {
+		output->dpms_off_pending = 1;
+		return;
+	}
+
+	pending_state = drm_pending_state_alloc(b);
+	drm_output_get_disable_state(pending_state, output);
+	ret = drm_pending_state_apply(pending_state);
+	if (ret != 0)
+		weston_log("drm_set_dpms: couldn't disable output?\n");
 }
 
 static const char * const connector_type_names[] = {
@@ -4288,23 +4456,33 @@ drm_output_disable(struct weston_output *base)
 {
 	struct drm_output *output = to_drm_output(base);
 	struct drm_backend *b = to_drm_backend(base->compositor);
+	struct drm_pending_state *pending_state;
+	struct drm_output_state *output_state;
+	struct drm_plane_state *plane_state;
+	int ret;
 
 	if (output->page_flip_pending || output->vblank_pending) {
 		output->disable_pending = 1;
 		return -1;
 	}
 
+	weston_log("Disabling output %s\n", output->base.name);
+	pending_state = drm_pending_state_alloc(b);
+	output_state = drm_output_get_disable_state(pending_state, output);
+	ret = drm_pending_state_apply(pending_state); /* XXX: sync */
+	if (ret)
+		weston_log("Couldn't disable output %s\n", output->base.name);
+
+	/* XXX: Ugly: open-codes part of drm_output_state_complete. */
+	wl_list_for_each(plane_state, &output_state->plane_list, link)
+		plane_state->complete = true;
+	drm_output_state_free(output->state_last);
+	output->state_last = NULL;
+
 	if (output->base.enabled)
 		drm_output_deinit(&output->base);
 
 	output->disable_pending = 0;
-
-	weston_log("Disabling output %s\n", output->base.name);
-	drmModeSetCrtc(b->drm.fd, output->crtc_id,
-		       0, 0, 0, 0, 0, NULL);
-
-	drm_output_state_free(output->state_cur);
-	output->state_cur = drm_output_state_alloc(output, NULL);
 
 	return 0;
 }
