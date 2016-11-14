@@ -1602,6 +1602,7 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	struct drm_output *output = state->output;
 	struct weston_compositor *c = output->base.compositor;
 	struct drm_plane_state *scanout_state;
+	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_backend *b = to_drm_backend(c);
 	struct drm_fb *fb;
 
@@ -1612,8 +1613,18 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	if (scanout_state->fb)
 		return;
 
-	if (b->use_pixman)
+	if (!pixman_region32_not_empty(damage) &&
+	    scanout_plane->state_cur->fb &&
+	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
+	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
+	    scanout_plane->state_cur->fb->width ==
+		output->base.current_mode->width &&
+	    scanout_plane->state_cur->fb->height ==
+		output->base.current_mode->height) {
+		fb = drm_fb_ref(scanout_plane->state_cur->fb);
+	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
+	}
 #if defined(ENABLE_IMXG2D)
 	else if (b->use_g2d)
 		fb = drm_output_render_g2d(state, damage);
