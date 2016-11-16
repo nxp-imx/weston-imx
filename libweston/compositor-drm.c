@@ -2841,10 +2841,8 @@ drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 	struct drm_backend *b = to_drm_backend(output->base.compositor);
 	struct drm_plane *plane = output->cursor_plane;
 	struct drm_plane_state *plane_state;
-	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	struct wl_shm_buffer *shmbuf;
 	bool needs_update = false;
-	float x, y;
 
 	if (!plane)
 		return NULL;
@@ -2874,16 +2872,6 @@ drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 	if (wl_shm_buffer_get_format(shmbuf) != WL_SHM_FORMAT_ARGB8888)
 		return NULL;
 
-	if (output->base.transform != WL_OUTPUT_TRANSFORM_NORMAL)
-		return NULL;
-	if (ev->transform.enabled &&
-	    (ev->transform.matrix.type > WESTON_MATRIX_TRANSFORM_TRANSLATE))
-		return NULL;
-	if (viewport->buffer.scale != output->base.current_scale)
-		return NULL;
-	if (ev->geometry.scissor_enabled)
-		return NULL;
-
 	if (ev->surface->width > b->cursor_width ||
 	    ev->surface->height > b->cursor_height)
 		return NULL;
@@ -2893,6 +2881,26 @@ drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 
 	if (plane_state && plane_state->fb)
 		return NULL;
+
+	/* We can't scale with the legacy API, and we don't try to account for
+	 * simple cropping/translation in cursor_bo_update. */
+	plane_state->output = output;
+	drm_plane_state_coords_for_view(plane_state, ev);
+	if (plane_state->src_x != 0 || plane_state->src_y != 0 ||
+	    plane_state->src_w > (unsigned) b->cursor_width << 16 ||
+	    plane_state->src_h > (unsigned) b->cursor_height << 16 ||
+	    plane_state->src_w != plane_state->dest_w << 16 ||
+	    plane_state->src_h != plane_state->dest_h << 16)
+		goto err;
+
+	/* The cursor API is somewhat special: in cursor_bo_update(), we upload
+	 * a buffer which is always cursor_width x cursor_height, even if the
+	 * surface we want to promote is actually smaller than this. Manually
+	 * mangle the plane state to deal with this. */
+	plane_state->src_w = b->cursor_width << 16;
+	plane_state->src_h = b->cursor_height << 16;
+	plane_state->dest_w = b->cursor_width;
+	plane_state->dest_h = b->cursor_height;
 
 	/* Since we're setting plane state up front, we need to work out
 	 * whether or not we need to upload a new cursor. We can't use the
@@ -2910,26 +2918,18 @@ drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 	}
 
 	output->cursor_view = ev;
-	weston_view_to_global_float(ev, 0, 0, &x, &y);
-	plane->base.x = x;
-	plane->base.y = y;
 
 	plane_state->fb =
 		drm_fb_ref(output->gbm_cursor_fb[output->current_cursor]);
-	plane_state->output = output;
-	plane_state->src_x = 0;
-	plane_state->src_y = 0;
-	plane_state->src_w = b->cursor_width << 16;
-	plane_state->src_h = b->cursor_height << 16;
-	plane_state->dest_x = (x - output->base.x) * output->base.current_scale;
-	plane_state->dest_y = (y - output->base.y) * output->base.current_scale;
-	plane_state->dest_w = b->cursor_width;
-	plane_state->dest_h = b->cursor_height;
 
 	if (needs_update)
 		cursor_bo_update(b, plane_state->fb->bo, ev);
 
 	return &plane->base;
+
+err:
+	drm_plane_state_put_back(plane_state);
+	return NULL;
 }
 
 static void
