@@ -2666,7 +2666,6 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 {
 	struct drm_output *output = output_state->output;
 	struct weston_compositor *ec = output->base.compositor;
-	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	struct drm_backend *b = to_drm_backend(ec);
 	struct wl_resource *buffer_resource;
 	struct drm_plane *p;
@@ -2692,13 +2691,6 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	if (wl_shm_buffer_get(buffer_resource))
 		return NULL;
 
-	if (viewport->buffer.transform != output->base.transform)
-		return NULL;
-	if (viewport->buffer.scale != output->base.current_scale)
-		return NULL;
-	if (!drm_view_transform_supported(ev))
-		return NULL;
-
 	if (ev->alpha != 1.0f)
 		return NULL;
 
@@ -2721,6 +2713,12 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	/* No sprites available */
 	if (!state)
 		return NULL;
+
+	state->output = output;
+	drm_plane_state_coords_for_view(state, ev);
+	if (state->src_w != state->dest_w << 16 ||
+	    state->src_h != state->dest_h << 16)
+		goto err;
 
 	if ((dmabuf = linux_dmabuf_buffer_get(buffer_resource))) {
 #ifdef HAVE_GBM_FD_IMPORT
@@ -2751,7 +2749,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 		if (dmabuf->attributes.n_planes != 1 ||
                     dmabuf->attributes.offset[0] != 0 ||
 		    dmabuf->attributes.flags)
-			return NULL;
+			goto err;
 
 		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_FD, &gbm_dmabuf,
 				   GBM_BO_USE_SCANOUT);
@@ -2767,8 +2765,12 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 
 	state->fb = drm_fb_get_from_bo(bo, b, drm_view_is_opaque(ev),
 				       BUFFER_CLIENT);
-	if (!state->fb)
+	if (!state->fb) {
+		/* Destroy the BO as we've allocated it, but it won't yet
+		 * be deallocated by the state. */
+		gbm_bo_destroy(bo);
 		goto err;
+	}
 
 	/* Check whether the format is supported */
 	for (i = 0; i < p->count_formats; i++)
@@ -2779,15 +2781,10 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 
 	drm_fb_set_buffer(state->fb, ev->surface->buffer_ref.buffer);
 
-	state->output = output;
-	drm_plane_state_coords_for_view(state, ev);
-
 	return &p->base;
 
 err:
 	drm_plane_state_put_back(state);
-	if (bo)
-		gbm_bo_destroy(bo);
 	return NULL;
 }
 
