@@ -1575,13 +1575,6 @@ drm_output_assign_state(struct drm_output_state *state,
 	}
 }
 
-static int
-drm_view_transform_supported(struct weston_view *ev)
-{
-	return !ev->transform.enabled ||
-		(ev->transform.matrix.type < WESTON_MATRIX_TRANSFORM_ROTATE);
-}
-
 static bool
 drm_view_is_opaque(struct weston_view *ev)
 {
@@ -1613,7 +1606,6 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_plane_state *state;
 	struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
-	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	struct gbm_bo *bo;
 
 	/* Don't import buffers which span multiple outputs. */
@@ -1629,27 +1621,24 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 	if (wl_shm_buffer_get(buffer->resource))
 		return NULL;
 
-	/* Make sure our view is exactly compatible with the output. */
-	if (ev->geometry.x != output->base.x ||
-	    ev->geometry.y != output->base.y)
-		return NULL;
-	if (buffer->width != output->base.current_mode->width ||
-	    buffer->height != output->base.current_mode->height)
-		return NULL;
+	state = drm_output_state_get_plane(output_state, scanout_plane);
+	if (state->fb)
+		goto err;
 
-	if (ev->transform.enabled)
-		return NULL;
-	if (ev->geometry.scissor_enabled)
-		return NULL;
-	if (viewport->buffer.transform != output->base.transform)
-		return NULL;
-	if (viewport->buffer.scale != output->base.current_scale)
-		return NULL;
-	if (!drm_view_transform_supported(ev))
-		return NULL;
+	state->output = output;
+	drm_plane_state_coords_for_view(state, ev);
+
+	/* The legacy API does not let us perform cropping or scaling. */
+	if (state->src_x != 0 || state->src_y != 0 ||
+	    state->src_w != state->dest_w << 16 ||
+	    state->src_h != state->dest_h << 16 ||
+	    state->dest_x != 0 || state->dest_y != 0 ||
+	    state->dest_w != (unsigned) output->base.current_mode->width ||
+	    state->dest_h != (unsigned) output->base.current_mode->height)
+		goto err;
 
 	if (ev->alpha != 1.0f)
-		return NULL;
+		goto err;
 
 	state = drm_output_state_get_plane(output_state, scanout_plane);
 	if (state->fb) {
@@ -1665,39 +1654,30 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 
 	/* Unable to use the buffer for scanout */
 	if (!bo)
-		return NULL;
+		goto err;
 
 	state->fb = drm_fb_get_from_bo(bo, b, drm_view_is_opaque(ev),
 				       BUFFER_CLIENT);
 	if (!state->fb) {
-		drm_plane_state_put_back(state);
+		/* We need to explicitly destroy the BO. */
 		gbm_bo_destroy(bo);
-		return NULL;
+		goto err;
 	}
 
 	/* Can't change formats with just a pageflip */
 	if (state->fb->format->format != output->gbm_format) {
 		/* No need to destroy the GBM BO here, as it's now owned
 		 * by the FB. */
-		drm_plane_state_put_back(state);
-		return NULL;
+		goto err;
 	}
 
 	drm_fb_set_buffer(state->fb, buffer);
 
-	state->output = output;
-
-	state->src_x = 0;
-	state->src_y = 0;
-	state->src_w = state->fb->width << 16;
-	state->src_h = state->fb->height << 16;
-
-	state->dest_x = 0;
-	state->dest_y = 0;
-	state->dest_w = output->base.current_mode->width;
-	state->dest_h = output->base.current_mode->height;
-
 	return &scanout_plane->base;
+
+err:
+	drm_plane_state_put_back(state);
+	return NULL;
 }
 
 static struct drm_fb *
