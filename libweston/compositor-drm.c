@@ -241,7 +241,6 @@ struct drm_backend {
 	 */
 	int min_width, max_width;
 	int min_height, max_height;
-	int no_addfb2;
 
 	struct wl_list plane_list;
 	int sprites_are_broken;
@@ -850,6 +849,7 @@ drm_fb_create_dumb(struct drm_backend *b, int width, int height,
 	struct drm_mode_create_dumb create_arg;
 	struct drm_mode_destroy_dumb destroy_arg;
 	struct drm_mode_map_dumb map_arg;
+	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
 
 	fb = zalloc(sizeof *fb);
 	if (!fb)
@@ -889,23 +889,12 @@ drm_fb_create_dumb(struct drm_backend *b, int width, int height,
 
 	ret = -1;
 
-	if (!b->no_addfb2) {
-		uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
+	handles[0] = fb->handle;
+	pitches[0] = fb->stride;
+	offsets[0] = 0;
 
-		handles[0] = fb->handle;
-		pitches[0] = fb->stride;
-		offsets[0] = 0;
-
-		ret = drmModeAddFB2(b->drm.fd, width, height,
-				    fb->format->format,
-				    handles, pitches, offsets,
-				    &fb->fb_id, 0);
-		if (ret) {
-			weston_log("addfb2 failed: %m\n");
-			b->no_addfb2 = 1;
-		}
-	}
-
+	ret = drmModeAddFB2(b->drm.fd, width, height, fb->format->format,
+			    handles, pitches, offsets, &fb->fb_id, 0);
 	if (ret) {
 		ret = drmModeAddFB(b->drm.fd, width, height,
 				   fb->format->depth, fb->format->bpp,
@@ -992,24 +981,13 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 		goto err_free;
 	}
 
-	ret = -1;
+	handles[0] = fb->handle;
+	pitches[0] = fb->stride;
+	offsets[0] = 0;
 
-	if (!backend->no_addfb2) {
-		handles[0] = fb->handle;
-		pitches[0] = fb->stride;
-		offsets[0] = 0;
-
-		ret = drmModeAddFB2(backend->drm.fd, fb->width, fb->height,
-				    fb->format->format,
-				    handles, pitches, offsets,
-				    &fb->fb_id, 0);
-		if (ret) {
-			weston_log("addfb2 failed: %m\n");
-			backend->no_addfb2 = 1;
-			backend->sprites_are_broken = 1;
-		}
-	}
-
+	ret = drmModeAddFB2(backend->drm.fd, fb->width, fb->height,
+			    fb->format->format, handles, pitches, offsets,
+			    &fb->fb_id, 0);
 	if (ret && fb->format->depth && fb->format->bpp)
 		ret = drmModeAddFB(backend->drm.fd, fb->width, fb->height,
 				   fb->format->depth, fb->format->bpp,
