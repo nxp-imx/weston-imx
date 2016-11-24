@@ -5569,10 +5569,47 @@ weston_version(int *major, int *minor, int *micro)
 	*micro = WESTON_VERSION_MICRO;
 }
 
+/**
+ * Attempts to find a module path from the module map specified in the
+ * environment. If found, writes the full path into the path variable.
+ *
+ * @returns The length of the string written to path on success, or 0 if the
+ * module was not specified in the environment map.
+ */
+WL_EXPORT size_t
+weston_module_path_from_env(const char *name, char *path, size_t path_len)
+{
+	const char *mapping = getenv("WESTON_MODULE_MAP");
+
+	while (mapping && *mapping) {
+		const char *filename, *next;
+
+		/* early out: impossibly short string */
+		if (strlen(mapping) < strlen(name) + 1)
+			return 0;
+
+		filename = &mapping[strlen(name) + 1];
+		next = strchr(filename, ';');
+
+		if (strncmp(mapping, name, strlen(name)) == 0 &&
+		    mapping[strlen(name)] == '=') {
+			size_t file_len = next - filename; /* no trailing NUL */
+			if (file_len >= path_len)
+				return 0;
+			strncpy(path, filename, file_len);
+			path[file_len] = '\0';
+			return file_len;
+		}
+
+		mapping = next ? (next + 1) : NULL;
+	}
+
+	return 0;
+}
+
 WL_EXPORT void *
 weston_load_module(const char *name, const char *entrypoint)
 {
-	const char *builddir = getenv("WESTON_BUILD_DIR");
 	char path[PATH_MAX];
 	void *module, *init;
 	size_t len;
@@ -5581,10 +5618,8 @@ weston_load_module(const char *name, const char *entrypoint)
 		return NULL;
 
 	if (name[0] != '/') {
-		if (builddir)
-			len = snprintf(path, sizeof path, "%s/.libs/%s",
-				       builddir, name);
-		else
+		len = weston_module_path_from_env(name, path, sizeof path);
+		if (len == 0)
 			len = snprintf(path, sizeof path, "%s/%s",
 				       LIBWESTON_MODULEDIR, name);
 	} else {

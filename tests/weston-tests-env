@@ -25,6 +25,22 @@ MODDIR=$abs_builddir/.libs
 SHELL_PLUGIN=$MODDIR/desktop-shell.so
 TEST_PLUGIN=$MODDIR/weston-test.so
 
+for mod in cms-colord cms-static desktop-shell drm-backend fbdev-backend \
+	   fullscreen-shell gl-renderer headless-backend hmi-controller \
+	   ivi-shell rdp-compositor screen-share wayland-backend \
+	   weston-test-desktop-shell x11-backend xwayland; do
+	WESTON_MODULE_MAP="${WESTON_MODULE_MAP}${mod}.so=${abs_builddir}/.libs/${mod}.so;"
+done
+
+for exe in weston-desktop-shell weston-keyboard weston-screenshooter \
+	   weston-simple-im; do \
+	WESTON_MODULE_MAP="${WESTON_MODULE_MAP}${exe}=${abs_builddir}/${exe};"
+done
+
+WESTON_MODULE_MAP="${WESTON_MODULE_MAP}weston-ivi-layout-test=${abs_builddir}/ivi-layout.ivi;"
+
+export WESTON_MODULE_MAP
+
 CONFIG_FILE="${TEST_NAME}.ini"
 
 if [ -e "${abs_builddir}/${CONFIG_FILE}" ]; then
@@ -40,7 +56,6 @@ case $TEST_FILE in
 		SHELL_PLUGIN=$MODDIR/ivi-shell.so
 
 		set -x
-		WESTON_BUILD_DIR=$abs_builddir \
 		WESTON_TEST_REFERENCE_PATH=$abs_top_srcdir/tests/reference \
 		$WESTON --backend=$MODDIR/$BACKEND \
 			--config=$abs_builddir/tests/weston-ivi.ini \
@@ -53,7 +68,6 @@ case $TEST_FILE in
 		;;
 	*.la|*.so)
 		set -x
-		WESTON_BUILD_DIR=$abs_builddir \
 		WESTON_TEST_REFERENCE_PATH=$abs_top_srcdir/tests/reference \
 		$WESTON --backend=$MODDIR/$BACKEND \
 			${CONFIG} \
@@ -68,7 +82,6 @@ case $TEST_FILE in
 		SHELL_PLUGIN=$MODDIR/ivi-shell.so
 
 		set -x
-		WESTON_BUILD_DIR=$abs_builddir \
 		WESTON_TEST_REFERENCE_PATH=$abs_top_srcdir/tests/reference \
 		WESTON_TEST_CLIENT_PATH=$abs_builddir/$TEST_FILE \
 		$WESTON --backend=$MODDIR/$BACKEND \
@@ -82,7 +95,6 @@ case $TEST_FILE in
 		;;
 	*)
 		set -x
-		WESTON_BUILD_DIR=$abs_builddir \
 		WESTON_TEST_REFERENCE_PATH=$abs_top_srcdir/tests/reference \
 		WESTON_TEST_CLIENT_PATH=$abs_builddir/$TEST_FILE \
 		$WESTON --backend=$MODDIR/$BACKEND \

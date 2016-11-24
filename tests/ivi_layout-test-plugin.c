@@ -32,6 +32,7 @@
 #include <signal.h>
 #include <string.h>
 #include <assert.h>
+#include <limits.h>
 
 #include "compositor.h"
 #include "compositor/weston.h"
@@ -231,7 +232,7 @@ controller_module_init(struct weston_compositor *compositor,
 {
 	struct wl_event_loop *loop;
 	struct test_launcher *launcher;
-	const char *path;
+	char path[PATH_MAX];
 
 	/* strict check, since this is an internal test module */
 	if (iface_version != sizeof(*iface)) {
@@ -239,9 +240,9 @@ controller_module_init(struct weston_compositor *compositor,
 		return -1;
 	}
 
-	path = getenv("WESTON_BUILD_DIR");
-	if (!path) {
-		weston_log("test setup failure: WESTON_BUILD_DIR not set\n");
+	if (weston_module_path_from_env("weston-ivi-layout-test", path,
+					sizeof path) == 0) {
+		weston_log("test setup failure: WESTON_MODULE_MAP not set\n");
 		return -1;
 	}
 
@@ -251,8 +252,7 @@ controller_module_init(struct weston_compositor *compositor,
 
 	launcher->compositor = compositor;
 	launcher->layout_interface = iface;
-	snprintf(launcher->exe, sizeof launcher->exe,
-		 "%s/ivi-layout.ivi", path);
+	snprintf(launcher->exe, sizeof launcher->exe, path);
 
 	if (wl_global_create(compositor->wl_display,
 			     &weston_test_runner_interface, 1,
