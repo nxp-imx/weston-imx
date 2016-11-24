@@ -1,0 +1,122 @@
+option('backend-drm',
+       type: 'boolean',
+       value: true,
+       description: 'Weston backend: DRM/KMS')
+option('backend-drm-screencast-vaapi',
+       type: 'boolean',
+       value: true,
+       description: 'DRM/KMS backend support for VA-API screencasting')
+option('backend-headless',
+       type: 'boolean',
+       value: true,
+       description: 'Weston backend: headless (testing)')
+option('backend-rdp',
+       type: 'boolean',
+       value: true,
+       description: 'Weston backend: RDP remote screensharing')
+option('screenshare',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor: RDP screen-sharing support')
+option('backend-wayland',
+       type: 'boolean',
+       value: true,
+       description: 'Weston backend: Wayland (nested)')
+option('backend-x11',
+       type: 'boolean',
+       value: true,
+       description: 'Weston backend: X11 (nested)')
+option('backend-default',
+       type: 'string',
+       value: '',
+       description: 'Weston backend: default backend selection')
+
+option('renderer-gl',
+       type: 'boolean',
+       value: true,
+       description: 'Weston renderer: EGL / OpenGL ES 2.x')
+option('renderer-pixman',
+       type: 'boolean',
+       value: true,
+       description: 'Weston renderer: Pixman (software rendering)')
+
+option('xwayland',
+       type: 'boolean',
+       value: true,
+       description: 'Xwayland: support for X11 clients inside Weston')
+option('xwayland-path',
+       type: 'string',
+       value: '/usr/bin/Xwayland',
+       description: 'Xwayland: path to installed Xwayland binary')
+
+option('shell-desktop',
+       type: 'boolean',
+       value: true,
+       description: 'Weston shell UI: traditional desktop')
+option('shell-fullscreen',
+       type: 'boolean',
+       value: true,
+       description: 'Weston shell UI: fullscreen/kiosk')
+option('shell-ivi',
+       type: 'boolean',
+       value: true,
+       description: 'Weston shell UI: IVI (automotive)')
+
+option('color-management-lcms',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor color management: lcms')
+option('color-management-colord',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor color management: colord (requires lcms)')
+
+option('launcher-logind',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor: support systemd-logind D-Bus protocol')
+
+option('xkbcommon',
+       type: 'boolean',
+       value: true,
+       description: 'Input: use libxkbcommon for keyboard handling')
+
+option('libunwind',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor: use libunwind for crash backtraces')
+
+option('image-jpeg',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor: JPEG screenshot support')
+option('image-webp',
+       type: 'boolean',
+       value: true,
+       description: 'Compositor: screensharing video support with WebP')
+
+option('clients-simple',
+       type: 'boolean',
+       value: true,
+       description: 'Sample clients: simple demo programs')
+option('clients-suite',
+       type: 'boolean',
+       value: true,
+       description: 'Sample clients: extended suite of demo programs')
+option('clients-egl',
+       type: 'boolean',
+       value: true,
+       description: 'Sample clients: EGL clients')
+option('clients-dmabuf-drm',
+       type: 'boolean',
+       value: true,
+       description: 'Sample clients: DRM-based dmabuf sample client')
+option('clients-dmabuf-v4l2',
+       type: 'boolean',
+       value: true,
+       description: 'Sample clients: V4L2/ViViD-based dmabuf sample client')
+
+option('test-junit-xml',
+       type: 'boolean',
+       value: true,
+       description: 'Tests: output JUnit XML results')
