@@ -37,7 +37,7 @@ for exe in weston-desktop-shell weston-keyboard weston-screenshooter \
 	WESTON_MODULE_MAP="${WESTON_MODULE_MAP}${exe}=${abs_builddir}/${exe};"
 done
 
-WESTON_MODULE_MAP="${WESTON_MODULE_MAP}weston-ivi-layout-test=${abs_builddir}/ivi-layout.ivi;"
+WESTON_MODULE_MAP="${WESTON_MODULE_MAP}weston-ivi-layout-test-client=${abs_builddir}/ivi-layout-test-client.ivi;"
 
 export WESTON_MODULE_MAP
 

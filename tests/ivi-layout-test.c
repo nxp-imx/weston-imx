@@ -240,7 +240,7 @@ controller_module_init(struct weston_compositor *compositor,
 		return -1;
 	}
 
-	if (weston_module_path_from_env("weston-ivi-layout-test", path,
+	if (weston_module_path_from_env("weston-ivi-layout-test-client", path,
 					sizeof path) == 0) {
 		weston_log("test setup failure: WESTON_MODULE_MAP not set\n");
 		return -1;
