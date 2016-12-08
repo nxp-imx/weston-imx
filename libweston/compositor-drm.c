@@ -1766,6 +1766,11 @@ drm_output_assign_state(struct drm_output_state *state,
 	}
 }
 
+enum drm_output_propose_state_mode {
+	DRM_OUTPUT_PROPOSE_STATE_MIXED, /**< mix renderer & planes */
+	DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY, /**< only assign to planes */
+};
+
 static struct weston_plane *
 drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 				struct weston_view *ev)
@@ -3027,13 +3032,17 @@ err:
 
 static struct drm_output_state *
 drm_output_propose_state(struct weston_output *output_base,
-			 struct drm_pending_state *pending_state)
+			 struct drm_pending_state *pending_state,
+			 enum drm_output_propose_state_mode mode)
 {
 	struct drm_output *output = to_drm_output(output_base);
+	struct drm_backend *b = to_drm_backend(output_base->compositor);
 	struct drm_output_state *state;
 	struct weston_view *ev;
 	pixman_region32_t surface_overlap, renderer_region, occluded_region;
 	struct weston_plane *primary = &output_base->compositor->primary_plane;
+	bool renderer_ok = (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY);
+	bool planes_ok = !b->sprites_are_broken;
 
 	assert(!output->state_last);
 	state = drm_output_state_duplicate(output->state_cur,
@@ -3096,32 +3105,45 @@ drm_output_propose_state(struct weston_output *output_base,
 			next_plane = primary;
 		pixman_region32_fini(&surface_overlap);
 
-		if (next_plane == NULL)
+		/* The cursor plane is 'special' in the sense that we can still
+		 * place it in the legacy API, and we gate that with a separate
+		 * cursors_are_broken flag. */
+		if (next_plane == NULL && !b->cursors_are_broken)
 			next_plane = drm_output_prepare_cursor_view(state, ev);
 		if (next_plane == NULL && !drm_view_is_opaque(ev))
+			next_plane = primary;
+		if (!planes_ok)
 			next_plane = primary;
 		if (next_plane == NULL)
 			next_plane = drm_output_prepare_scanout_view(state, ev);
 		if (next_plane == NULL)
 			next_plane = drm_output_prepare_overlay_view(state, ev);
-		if (next_plane == NULL)
-			next_plane = primary;
 
-		if (next_plane == primary)
+		if (!next_plane || next_plane == primary) {
+			if (!renderer_ok)
+				goto err;
+
 			pixman_region32_union(&renderer_region,
 					      &renderer_region,
 					      &clipped_view);
-		else if (output->cursor_plane &&
-			 next_plane != &output->cursor_plane->base)
+		} else if (output->cursor_plane &&
+			   next_plane != &output->cursor_plane->base) {
 			pixman_region32_union(&occluded_region,
 					      &occluded_region,
 					      &clipped_view);
+		}
 		pixman_region32_fini(&clipped_view);
 	}
 	pixman_region32_fini(&renderer_region);
 	pixman_region32_fini(&occluded_region);
 
 	return state;
+
+err:
+	pixman_region32_fini(&renderer_region);
+	pixman_region32_fini(&occluded_region);
+	drm_output_state_free(state);
+	return NULL;
 }
 
 static void
@@ -3135,7 +3157,8 @@ drm_assign_planes(struct weston_output *output_base, void *repaint_data)
 	struct weston_view *ev;
 	struct weston_plane *primary = &output_base->compositor->primary_plane;
 
-	state = drm_output_propose_state(output_base, pending_state);
+	state = drm_output_propose_state(output_base, pending_state,
+					 DRM_OUTPUT_PROPOSE_STATE_MIXED);
 
 	wl_list_for_each(ev, &output_base->compositor->view_list, link) {
 		struct drm_plane *target_plane = NULL;
