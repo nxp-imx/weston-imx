@@ -3535,6 +3535,17 @@ init_kms_caps(struct drm_backend *b)
 	weston_log("DRM: %s atomic modesetting\n",
 		   b->atomic_modeset ? "supports" : "does not support");
 
+	/*
+	 * KMS support for hardware planes cannot properly synchronize
+	 * without nuclear page flip. Without nuclear/atomic, hw plane
+	 * and cursor plane updates would either tear or cause extra
+	 * waits for vblanks which means dropping the compositor framerate
+	 * to a fraction. For cursors, it's not so bad, so they are
+	 * enabled.
+	 */
+	if (!b->atomic_modeset)
+		b->sprites_are_broken = 1;
+
 	return 0;
 }
 
@@ -5868,17 +5879,6 @@ drm_backend_create(struct weston_compositor *compositor,
 	wl_array_init(&b->unused_crtcs);
 	wl_array_init(&b->unused_connectors);
 
-	/*
-	 * KMS support for hardware planes cannot properly synchronize
-	 * without nuclear page flip. Without nuclear/atomic, hw plane
-	 * and cursor plane updates would either tear or cause extra
-	 * waits for vblanks which means dropping the compositor framerate
-	 * to a fraction. For cursors, it's not so bad, so they are
-	 * enabled.
-	 *
-	 * These can be enabled again when nuclear/atomic support lands.
-	 */
-	b->sprites_are_broken = 1;
 	b->compositor = compositor;
 	b->use_pixman = config->use_pixman;
 #if defined(ENABLE_IMXG2D)
