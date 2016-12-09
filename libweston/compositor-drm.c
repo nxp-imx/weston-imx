@@ -1777,6 +1777,7 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 				enum drm_output_propose_state_mode mode)
 {
 	struct drm_output *output = output_state->output;
+	struct drm_backend *b = to_drm_backend(output->base.compositor);
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_plane_state *state;
 	struct drm_plane_state *state_old = NULL;
@@ -1788,7 +1789,7 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 		return NULL;
 
 	/* Can't change formats with just a pageflip */
-	if (fb->format->format != output->gbm_format) {
+	if (!b->atomic_modeset && fb->format->format != output->gbm_format) {
 		drm_fb_unref(fb);
 		return NULL;
 	}
@@ -1816,12 +1817,10 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 	drm_plane_state_coords_for_view(state, ev);
 
 	/* The legacy API does not let us perform cropping or scaling. */
-	if (state->src_x != 0 || state->src_y != 0 ||
-	    state->src_w != state->dest_w << 16 ||
-	    state->src_h != state->dest_h << 16 ||
-	    state->dest_x != 0 || state->dest_y != 0 ||
-	    state->dest_w != (unsigned) output->base.current_mode->width ||
-	    state->dest_h != (unsigned) output->base.current_mode->height)
+	if (!b->atomic_modeset &&
+	    (state->src_x != 0 || state->src_y != 0 ||
+	     state->src_w != state->dest_w << 16 ||
+	     state->src_h != state->dest_h << 16))
 		goto err;
 
 	if (mode == DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY) {
@@ -2909,8 +2908,9 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 		state->ev = ev;
 		state->output = output;
 		drm_plane_state_coords_for_view(state, ev);
-		if (state->src_w != state->dest_w << 16 ||
-		    state->src_h != state->dest_h << 16) {
+		if (!b->atomic_modeset &&
+		    (state->src_w != state->dest_w << 16 ||
+		     state->src_h != state->dest_h << 16)) {
 			drm_plane_state_put_back(state);
 			continue;
 		}
