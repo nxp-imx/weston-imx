@@ -1771,7 +1771,7 @@ enum drm_output_propose_state_mode {
 	DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY, /**< only assign to planes */
 };
 
-static struct weston_plane *
+static struct drm_plane_state *
 drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 				struct weston_view *ev)
 {
@@ -1810,7 +1810,7 @@ drm_output_prepare_scanout_view(struct drm_output_state *output_state,
 	    state->dest_h != (unsigned) output->base.current_mode->height)
 		goto err;
 
-	return &scanout_plane->base;
+	return state;
 
 err:
 	drm_plane_state_put_back(state);
@@ -2020,8 +2020,8 @@ drm_output_apply_state_legacy(struct drm_output_state *state)
 		&output->props_conn[WDRM_CONNECTOR_DPMS];
 	struct drm_plane_state *scanout_state;
 	struct drm_plane_state *ps;
-	struct drm_plane *p;
 	struct drm_mode *mode;
+	struct drm_plane *p;
 	struct timespec now;
 	int ret = 0;
 
@@ -2779,7 +2779,7 @@ atomic_flip_handler(int fd, unsigned int frame, unsigned int sec,
 }
 #endif
 
-static struct weston_plane *
+static struct drm_plane_state *
 drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 				struct weston_view *ev)
 {
@@ -2837,7 +2837,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	    state->src_h != state->dest_h << 16)
 		goto err;
 
-	return &p->base;
+	return state;
 
 err:
 	drm_plane_state_put_back(state);
@@ -2881,7 +2881,7 @@ cursor_bo_update(struct drm_backend *b, struct gbm_bo *bo,
 		weston_log("failed update cursor: %m\n");
 }
 
-static struct weston_plane *
+static struct drm_plane_state *
 drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 			       struct weston_view *ev)
 {
@@ -2970,7 +2970,7 @@ drm_output_prepare_cursor_view(struct drm_output_state *output_state,
 	if (needs_update)
 		cursor_bo_update(b, plane_state->fb->bo, ev);
 
-	return &plane->base;
+	return plane_state;
 
 err:
 	drm_plane_state_put_back(plane_state);
@@ -3040,7 +3040,6 @@ drm_output_propose_state(struct weston_output *output_base,
 	struct drm_output_state *state;
 	struct weston_view *ev;
 	pixman_region32_t surface_overlap, renderer_region, occluded_region;
-	struct weston_plane *primary = &output_base->compositor->primary_plane;
 	bool renderer_ok = (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY);
 	bool planes_ok = !b->sprites_are_broken;
 
@@ -3066,7 +3065,8 @@ drm_output_propose_state(struct weston_output *output_base,
 	pixman_region32_init(&occluded_region);
 
 	wl_list_for_each(ev, &output_base->compositor->view_list, link) {
-		struct weston_plane *next_plane = NULL;
+		struct drm_plane_state *ps = NULL;
+		bool force_renderer = false;
 		pixman_region32_t clipped_view;
 		bool occluded = false;
 
@@ -3078,7 +3078,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		/* We only assign planes to views which are exclusively present
 		 * on our output. */
 		if (ev->output_mask != (1u << output->base.id))
-			next_plane = primary;
+			force_renderer = true;
 
 		/* Ignore views we know to be totally occluded. */
 		pixman_region32_init(&clipped_view);
@@ -3102,36 +3102,47 @@ drm_output_propose_state(struct weston_output *output_base,
 		pixman_region32_intersect(&surface_overlap, &renderer_region,
 					  &clipped_view);
 		if (pixman_region32_not_empty(&surface_overlap))
-			next_plane = primary;
+			force_renderer = true;
 		pixman_region32_fini(&surface_overlap);
+
+		if (force_renderer && !renderer_ok) {
+			pixman_region32_fini(&clipped_view);
+			goto err;
+		}
 
 		/* The cursor plane is 'special' in the sense that we can still
 		 * place it in the legacy API, and we gate that with a separate
 		 * cursors_are_broken flag. */
-		if (next_plane == NULL && !b->cursors_are_broken)
-			next_plane = drm_output_prepare_cursor_view(state, ev);
-		if (next_plane == NULL && !drm_view_is_opaque(ev))
-			next_plane = primary;
-		if (!planes_ok)
-			next_plane = primary;
-		if (next_plane == NULL)
-			next_plane = drm_output_prepare_scanout_view(state, ev);
-		if (next_plane == NULL)
-			next_plane = drm_output_prepare_overlay_view(state, ev);
+		if (!force_renderer && !b->cursors_are_broken)
+			ps = drm_output_prepare_cursor_view(state, ev);
 
-		if (!next_plane || next_plane == primary) {
-			if (!renderer_ok)
-				goto err;
+		if (!planes_ok || !drm_view_is_opaque(ev))
+			force_renderer = true;
 
-			pixman_region32_union(&renderer_region,
-					      &renderer_region,
-					      &clipped_view);
-		} else if (output->cursor_plane &&
-			   next_plane != &output->cursor_plane->base) {
+		if (!drm_view_is_opaque(ev))
+			force_renderer = true;
+
+		if (!force_renderer && !ps)
+			ps = drm_output_prepare_scanout_view(state, ev);
+		if (!force_renderer && !ps)
+			ps = drm_output_prepare_overlay_view(state, ev);
+
+		if (ps) {
 			pixman_region32_union(&occluded_region,
 					      &occluded_region,
 					      &clipped_view);
+			pixman_region32_fini(&clipped_view);
+			continue;
 		}
+
+		if (!renderer_ok) {
+			pixman_region32_fini(&clipped_view);
+			goto err;
+		}
+
+		pixman_region32_union(&renderer_region,
+				      &renderer_region,
+				      &clipped_view);
 		pixman_region32_fini(&clipped_view);
 	}
 	pixman_region32_fini(&renderer_region);
