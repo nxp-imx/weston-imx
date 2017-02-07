@@ -1201,10 +1201,9 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 				struct weston_view *ev)
 {
 	struct drm_output *output = state->output;
-	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	pixman_region32_t dest_rect, src_rect;
 	pixman_box32_t *box, tbox;
-	wl_fixed_t sx1, sy1, sx2, sy2;
+	float sxf1, syf1, sxf2, syf2;
 
 	/* Update the base weston_plane co-ordinates. */
 	box = pixman_region32_extents(&ev->transform.boundingbox);
@@ -1230,52 +1229,22 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 	state->dest_h = tbox.y2 - tbox.y1;
 	pixman_region32_fini(&dest_rect);
 
-	/* Now calculate the source rectangle, by finding the points in the
-	 * view and working backwards to source co-ordinates. */
+	/* Now calculate the source rectangle, by finding the extents of the
+	 * view, and working backwards to source co-ordinates. */
 	pixman_region32_init(&src_rect);
 	pixman_region32_intersect(&src_rect, &ev->transform.boundingbox,
 				  &output->base.region);
 	box = pixman_region32_extents(&src_rect);
-
-	/* Accounting for any transformations made to this particular surface
-	 * view, find the source rectangle to use. */
-	weston_view_from_global_fixed(ev,
-				      wl_fixed_from_int(box->x1),
-				      wl_fixed_from_int(box->y1),
-				      &sx1, &sy1);
-	weston_view_from_global_fixed(ev,
-				      wl_fixed_from_int(box->x2),
-				      wl_fixed_from_int(box->y2),
-				      &sx2, &sy2);
-
-	/* XXX: How is this possible ... ? */
-	if (sx1 < 0)
-		sx1 = 0;
-	if (sy1 < 0)
-		sy1 = 0;
-	if (sx2 > wl_fixed_from_int(ev->surface->width))
-		sx2 = wl_fixed_from_int(ev->surface->width);
-	if (sy2 > wl_fixed_from_int(ev->surface->height))
-		sy2 = wl_fixed_from_int(ev->surface->height);
-
-	tbox.x1 = sx1;
-	tbox.y1 = sy1;
-	tbox.x2 = sx2;
-	tbox.y2 = sy2;
-
-	/* Apply viewport transforms in reverse, to get the source co-ordinates
-	 * in buffer space. */
-	tbox = weston_transformed_rect(wl_fixed_from_int(ev->surface->width),
-				       wl_fixed_from_int(ev->surface->height),
-				       viewport->buffer.transform,
-				       viewport->buffer.scale,
-				       tbox);
-
-	state->src_x = tbox.x1 << 8;
-	state->src_y = tbox.y1 << 8;
-	state->src_w = (tbox.x2 - tbox.x1) << 8;
-	state->src_h = (tbox.y2 - tbox.y1) << 8;
+	weston_view_from_global_float(ev, box->x1, box->y1, &sxf1, &syf1);
+	weston_surface_to_buffer_float(ev->surface, sxf1, syf1, &sxf1, &syf1);
+	weston_view_from_global_float(ev, box->x2, box->y2, &sxf2, &syf2);
+	weston_surface_to_buffer_float(ev->surface, sxf2, syf2, &sxf2, &syf2);
 	pixman_region32_fini(&src_rect);
+
+	state->src_x = wl_fixed_from_double(sxf1) << 8;
+	state->src_y = wl_fixed_from_double(syf1) << 8;
+	state->src_w = wl_fixed_from_double(sxf2 - sxf1) << 8;
+	state->src_h = wl_fixed_from_double(syf2 - syf1) << 8;
 }
 
 /**
