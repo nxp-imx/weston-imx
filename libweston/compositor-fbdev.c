@@ -574,12 +574,12 @@ fbdev_output_create(struct fbdev_backend *backend,
 		}
 	}
 	output->fb_fd = fb_fd;
-	output->base.name = strdup("fbdev");
+
+	weston_output_init(&output->base, backend->compositor, "fbdev");
+
 	output->base.destroy = fbdev_output_destroy;
 	output->base.disable = fbdev_output_disable;
 	output->base.enable = fbdev_output_enable;
-
-	weston_output_init(&output->base, backend->compositor);
 
 	/* only one static mode in list */
 	output->mode.flags =
