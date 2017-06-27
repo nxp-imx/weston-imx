@@ -49,6 +49,7 @@
 #include "launcher-util.h"
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
+#include "gl-renderer.h"
 #include "presentation-time-server-protocol.h"
 
 struct fbdev_backend {
@@ -58,6 +59,7 @@ struct fbdev_backend {
 
 	struct udev *udev;
 	struct udev_input input;
+	int use_pixman;
 	uint32_t output_transform;
 	struct wl_listener session_listener;
 };
@@ -94,6 +96,7 @@ struct fbdev_output {
 	uint8_t depth;
 };
 
+struct gl_renderer_interface *gl_renderer;
 static const char default_seat[] = "seat0";
 
 static inline struct fbdev_output *
@@ -118,7 +121,7 @@ fbdev_output_start_repaint_loop(struct weston_output *output)
 }
 
 static int
-fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
+fbdev_output_repaint_pixman(struct weston_output *base, pixman_region32_t *damage)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
 	struct weston_compositor *ec = output->base.compositor;
@@ -143,6 +146,29 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
 
 	return 0;
 }
+
+static int
+fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
+{
+	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *fbb = output->backend;
+	struct weston_compositor *ec = fbb->compositor;
+
+	if (fbb->use_pixman) {
+		fbdev_output_repaint_pixman(base,damage);
+	} else {
+		ec->renderer->repaint_output(base, damage);
+		/* Update the damage region. */
+		pixman_region32_subtract(&ec->primary_plane.damage,
+	                         &ec->primary_plane.damage, damage);
+
+		wl_event_source_timer_update(output->finish_frame_timer,
+	                             1000000 / output->mode.refresh);
+	}
+
+	return 0;
+}
+
 
 static int
 finish_frame_handler(void *data)
@@ -492,6 +518,14 @@ fbdev_output_create(struct fbdev_backend *backend,
 		weston_log("Creating frame buffer failed.\n");
 		goto out_free;
 	}
+	if (backend->use_pixman) {
+		if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
+			weston_log("Mapping frame buffer failed.\n");
+			goto out_free;
+		}
+	} else {
+		close(fb_fd);
+	}
 
 	output->base.name = strdup("fbdev");
 	output->base.destroy = fbdev_output_destroy;
@@ -534,14 +568,19 @@ static void
 fbdev_output_destroy(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *backend = output->backend;
 
 	weston_log("Destroying fbdev output.\n");
 
 	/* Close the frame buffer. */
 	fbdev_output_disable(base);
 
+	if (backend->use_pixman) {
 	if (base->renderer_state != NULL)
 		pixman_renderer_output_destroy(base);
+	} else {
+		gl_renderer->output_destroy(base);
+	}
 
 	/* Remove the output. */
 	weston_output_destroy(&output->base);
@@ -610,9 +649,11 @@ fbdev_output_reenable(struct fbdev_backend *backend,
 	}
 
 	/* Map the device if it has the same details as before. */
-	if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
-		weston_log("Mapping frame buffer failed.\n");
-		goto err;
+	if (backend->use_pixman) {
+		if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
+			weston_log("Mapping frame buffer failed.\n");
+			goto err;
+		}
 	}
 
 	return 0;
@@ -628,8 +669,10 @@ static void
 fbdev_output_disable(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *backend = output->backend;
 
 	weston_log("Disabling fbdev output.\n");
+	if ( ! backend->use_pixman) return;
 
 	if (output->hw_surface != NULL) {
 		pixman_image_unref(output->hw_surface);
@@ -744,12 +787,31 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->base.restore = fbdev_restore;
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
+	backend->use_pixman = !param->use_gl;
+	backend->output_transform = param->output_transform;
 
 	weston_setup_vt_switch_bindings(compositor);
 
-	if (pixman_renderer_init(compositor) < 0)
-		goto out_launcher;
+	if (backend->use_pixman) {
+		if (pixman_renderer_init(compositor) < 0)
+			goto out_launcher;
+	} else {
+		gl_renderer = weston_load_module("gl-renderer.so",
+						 "gl_renderer_interface");
+		if (!gl_renderer) {
+			weston_log("could not load gl renderer\n");
+			goto out_launcher;
+		}
 
+		if (gl_renderer->display_create(compositor, NO_EGL_PLATFORM,
+					EGL_DEFAULT_DISPLAY,
+					NULL,
+					gl_renderer->opaque_attribs,
+					NULL, 0) < 0) {
+			weston_log("gl_renderer_create failed.\n");
+			goto out_launcher;
+		}
+	}
 	if (fbdev_output_create(backend, param->device) < 0)
 		goto out_launcher;
 
@@ -779,6 +841,8 @@ config_init_to_defaults(struct weston_fbdev_backend_config *config)
 	 * udev, rather than passing a device node in as a parameter. */
 	config->tty = 0; /* default to current tty */
 	config->device = "/dev/fb0"; /* default frame buffer */
+	config->use_gl = 0;
+	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
 WL_EXPORT int
