@@ -49,7 +49,9 @@
 #include "launcher-util.h"
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
+#ifdef ENABLE_EGL
 #include "gl-renderer.h"
+#endif
 #include "presentation-time-server-protocol.h"
 
 struct fbdev_backend {
@@ -62,6 +64,9 @@ struct fbdev_backend {
 	int use_pixman;
 	uint32_t output_transform;
 	struct wl_listener session_listener;
+#ifdef ENABLE_EGL
+	NativeDisplayType display;
+#endif
 };
 
 struct fbdev_screeninfo {
@@ -94,9 +99,14 @@ struct fbdev_output {
 	/* pixman details. */
 	pixman_image_t *hw_surface;
 	uint8_t depth;
+#ifdef ENABLE_EGL
+	NativeDisplayType display;
+	NativeWindowType  window;
+#endif
 };
-
+#ifdef ENABLE_EGL
 struct gl_renderer_interface *gl_renderer;
+#endif
 static const char default_seat[] = "seat0";
 
 static inline struct fbdev_output *
@@ -446,6 +456,12 @@ fbdev_frame_buffer_destroy(struct fbdev_output *output)
 		           strerror(errno));
 
 	output->fb = NULL;
+#ifdef ENABLE_EGL
+	if(output->window)
+		fbDestroyWindow(output->window);
+	if(output->display)
+		fbDestroyDisplay(output->display);
+#endif
 }
 
 static void fbdev_output_destroy(struct weston_output *base);
@@ -473,9 +489,28 @@ fbdev_output_enable(struct weston_output *base)
 
 	output->base.start_repaint_loop = fbdev_output_start_repaint_loop;
 	output->base.repaint = fbdev_output_repaint;
+#ifdef ENABLE_EGL
+	if (!backend->use_pixman) {
+		output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
+			if (output->window == NULL) {
+				fprintf(stderr, "failed to create window\n");
+				return 0;
+			}
+			if (gl_renderer->output_window_create(&output->base,
+						       (EGLNativeWindowType)output->window, NULL,
+						       gl_renderer->opaque_attribs,
+						       NULL, 0) < 0) {
+				weston_log("gl_renderer_output_create failed.\n");
+				goto out_hw_surface;
+			}
+	}
+	else
+#endif
+	{
+		if (pixman_renderer_output_create(&output->base) < 0)
+			goto out_hw_surface;
+	}
 
-	if (pixman_renderer_output_create(&output->base) < 0)
-		goto out_hw_surface;
 
 	loop = wl_display_get_event_loop(backend->compositor->wl_display);
 	output->finish_frame_timer =
@@ -498,12 +533,12 @@ out_hw_surface:
 
 static int
 fbdev_output_create(struct fbdev_backend *backend,
-                    const char *device)
+                   int x, int y, const char *device)
 {
 	struct fbdev_output *output;
 	int fb_fd;
 
-	weston_log("Creating fbdev output.\n");
+	weston_log("Creating fbdev output. %s x=%d y=%d\n", device, x, y);
 
 	output = zalloc(sizeof *output);
 	if (output == NULL)
@@ -642,7 +677,7 @@ fbdev_output_reenable(struct fbdev_backend *backend,
 		 * are re-initialised. */
 		device = strdup(output->device);
 		fbdev_output_destroy(&output->base);
-		fbdev_output_create(backend, device);
+		fbdev_output_create(backend, 0, 0, device);
 		free(device);
 
 		return 0;
@@ -748,7 +783,7 @@ fbdev_restore(struct weston_compositor *compositor)
 }
 
 static struct fbdev_backend *
-fbdev_backend_create(struct weston_compositor *compositor,
+fbdev_backend_create(struct weston_compositor *compositor, 
                      struct weston_fbdev_backend_config *param)
 {
 	struct fbdev_backend *backend;
@@ -791,18 +826,20 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->output_transform = param->output_transform;
 
 	weston_setup_vt_switch_bindings(compositor);
-
-	if (backend->use_pixman) {
-		if (pixman_renderer_init(compositor) < 0)
-			goto out_launcher;
-	} else {
-		gl_renderer = weston_load_module("gl-renderer.so",
+#ifdef ENABLE_EGL
+	if (!backend->use_pixman) {
+			gl_renderer = weston_load_module("gl-renderer.so",
 						 "gl_renderer_interface");
 		if (!gl_renderer) {
 			weston_log("could not load gl renderer\n");
 			goto out_launcher;
 		}
 
+		backend->display = fbGetDisplay(backend->compositor->wl_display);
+		if (backend->display == NULL) {
+			weston_log("fbGetDisplay failed.\n");
+			goto out_launcher;
+		}
 		if (gl_renderer->display_create(compositor, NO_EGL_PLATFORM,
 					EGL_DEFAULT_DISPLAY,
 					NULL,
@@ -812,7 +849,14 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			goto out_launcher;
 		}
 	}
-	if (fbdev_output_create(backend, param->device) < 0)
+	else 
+#endif
+	{
+		if (pixman_renderer_init(compositor) < 0)
+			goto out_launcher;
+	}
+
+	if (fbdev_output_create(backend, 0, 0, param->device) < 0)
 		goto out_launcher;
 
 	udev_input_init(&backend->input, compositor, backend->udev,
@@ -861,7 +905,12 @@ weston_backend_init(struct weston_compositor *compositor,
 
 	config_init_to_defaults(&config);
 	memcpy(&config, config_base, config_base->struct_size);
-
+#ifdef ENABLE_EGL
+	if (config.use_pixman)
+		config.use_gl = 0;
+#else
+	config.use_pixman =  1;
+#endif
 	b = fbdev_backend_create(compositor, &config);
 	if (b == NULL)
 		return -1;
