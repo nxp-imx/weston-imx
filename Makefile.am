@@ -95,8 +95,6 @@ libweston_@LIBWESTON_MAJOR@_la_SOURCES =			\
 	libweston/timeline-object.h			\
 	libweston/linux-dmabuf.c			\
 	libweston/linux-dmabuf.h			\
-	libweston/pixel-formats.c			\
-	libweston/pixel-formats.h			\
 	shared/helpers.h				\
 	shared/matrix.c					\
 	shared/matrix.h					\
@@ -399,6 +397,8 @@ drm_backend_la_CFLAGS =				\
 drm_backend_la_SOURCES =			\
 	libweston/compositor-drm.c		\
 	libweston/compositor-drm.h		\
+	libweston/pixel-formats.c		\
+	libweston/pixel-formats.h		\
 	$(INPUT_BACKEND_SOURCES)		\
 	shared/helpers.h			\
 	shared/timespec-util.h			\
