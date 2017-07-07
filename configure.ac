@@ -145,8 +145,8 @@ AC_ARG_ENABLE(egl, [  --disable-egl],,
 AM_CONDITIONAL(ENABLE_EGL, test x$enable_egl = xyes)
 if test x$enable_egl = xyes; then
 	AC_DEFINE([ENABLE_EGL], [1], [Build Weston with EGL support])
-	PKG_CHECK_MODULES(EGL, [egl glesv2])
-	PKG_CHECK_MODULES([EGL_TESTS], [egl glesv2 wayland-client wayland-egl])
+	PKG_CHECK_MODULES(EGL, [egl])
+	PKG_CHECK_MODULES([EGL_TESTS], [egl wayland-client wayland-egl])
 	AC_CHECK_HEADERS([linux/sync_file.h])
 	COMPOSITOR_MODULES="$COMPOSITOR_MODULES egl"
 fi
