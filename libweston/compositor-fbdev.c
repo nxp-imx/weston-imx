@@ -109,7 +109,7 @@ struct fbdev_output {
 	NativeWindowType  window;
 #endif
 };
-#ifdef ENABLE_EGL
+#ifdef ENABLE_OPENGL
 struct gl_renderer_interface *gl_renderer;
 #endif
 struct g2d_renderer_interface *g2d_renderer;
@@ -509,8 +509,8 @@ fbdev_output_enable(struct weston_output *base)
 			weston_log("g2d_renderer_output_create failed.\n");
 			goto out_hw_surface;
 		}
+#ifdef ENABLE_OPENGL
 	} else {
-#ifdef ENABLE_EGL
 			output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
 			if (output->window == NULL) {
 				fprintf(stderr, "failed to create window\n");
@@ -629,8 +629,10 @@ fbdev_output_destroy(struct weston_output *base)
 			pixman_renderer_output_destroy(base);
 	} else if (backend->use_g2d) {
 		g2d_renderer->output_destroy(base);
+#ifdef ENABLE_OPENGL
 	} else {
 		gl_renderer->output_destroy(base);
+#endif
 	}
 
 	/* Remove the output. */
@@ -895,9 +897,9 @@ fbdev_backend_create(struct weston_compositor *compositor,
 						link)->width;
 			}
 		}
+#ifdef ENABLE_OPENGL
 	}
 	else {
-#ifdef ENABLE_EGL
 		gl_renderer = weston_load_module("gl-renderer.so",
 						 "gl_renderer_interface");
 		if (!gl_renderer) {

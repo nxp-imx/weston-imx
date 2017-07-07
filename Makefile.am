@@ -306,12 +306,13 @@ westoninclude_HEADERS +=				\
 	ivi-shell/ivi-layout-export.h
 endif
 
-if ENABLE_EGL
+if ENABLE_OPENGL
 libweston_module_LTLIBRARIES += gl-renderer.la
 gl_renderer_la_LDFLAGS = -module -avoid-version
 gl_renderer_la_LIBADD =				\
 	libweston-@LIBWESTON_MAJOR@.la		\
 	$(EGL_LIBS)				\
+	$(OPENGL_LIBS)				\
 	$(COMPOSITOR_LIBS)
 gl_renderer_la_CFLAGS =				\
 	$(COMPOSITOR_CFLAGS)			\

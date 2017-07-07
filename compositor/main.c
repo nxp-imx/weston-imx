@@ -575,7 +575,9 @@ usage(int error_code)
 		"  --tty=TTY\t\tThe tty to use\n"
 		"  --device=DEVICE\tThe framebuffer device to use\n"
 		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
+#if defined(ENABLE_OPENGL)
 		"  --use-gl\t\tUse the GL renderer\n\n"
+#endif
 		"  --use-g2d\t\tUse the G2D renderer\n\n"
 		"  --clone-mode\t\tEnabe clone mode in the G2D renderer\n\n"
 		"\n");
@@ -1449,7 +1451,9 @@ load_fbdev_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_STRING, "device", 0, &config.device },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#ifdef ENABLE_OPENGL
 		{ WESTON_OPTION_INTEGER, "use-gl", 0, &config.use_gl },
+#endif
 		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
 		{ WESTON_OPTION_BOOLEAN, "clone-mode", 0, &config.clone_mode },
 	};

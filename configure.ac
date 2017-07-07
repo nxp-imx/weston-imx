@@ -131,12 +131,20 @@ AC_ARG_ENABLE(egl, [  --disable-egl],,
 AM_CONDITIONAL(ENABLE_EGL, test x$enable_egl = xyes)
 if test x$enable_egl = xyes; then
 	AC_DEFINE([ENABLE_EGL], [1], [Build Weston with EGL support])
-	PKG_CHECK_MODULES(EGL, [egl glesv2])
-        PKG_CHECK_MODULES([EGL_TESTS], [egl glesv2 wayland-client wayland-egl])
-	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
+	PKG_CHECK_MODULES(EGL, [egl])
+	PKG_CHECK_MODULES([EGL_TESTS], [egl wayland-client wayland-egl])
 	COMPOSITOR_MODULES="$COMPOSITOR_MODULES egl"
 fi
 
+AC_ARG_ENABLE(opengl, [  --disable-opengl],,
+              enable_opengl=$enable_egl)
+AM_CONDITIONAL(ENABLE_OPENGL, test x$enable_egl = xyes -a x$enable_opengl = xyes)
+if test x$enable_egl = xyes -a x$enable_opengl = xyes; then
+	AC_DEFINE([ENABLE_OPENGL], [1], [Build Weston with OpenGL support])
+	PKG_CHECK_MODULES(OPENGL, [glesv2])
+	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
+fi
+ 
 AC_ARG_ENABLE(xkbcommon,
 	      AS_HELP_STRING([--disable-xkbcommon], [Disable libxkbcommon
 			      support: This is only useful in environments
@@ -370,9 +378,9 @@ fi
 AC_ARG_ENABLE(simple-egl-clients,
               AS_HELP_STRING([--disable-simple-egl-clients],
                              [do not build the simple EGL clients]),,
-              enable_simple_egl_clients="$enable_egl")
-AM_CONDITIONAL(BUILD_SIMPLE_EGL_CLIENTS, test "x$enable_simple_egl_clients" = "xyes")
-if test x$enable_simple_egl_clients = xyes; then
+              enable_simple_egl_clients="$enable_opengl")
+AM_CONDITIONAL(BUILD_SIMPLE_EGL_CLIENTS, test "x$enable_simple_egl_clients" = "xyes" -a "x$enable_opengl" = "xyes")
+if test x$enable_simple_egl_clients = xyes -a "x$enable_opengl" = "xyes"; then
   PKG_CHECK_MODULES(SIMPLE_EGL_CLIENT,
                     [egl glesv2 wayland-client wayland-egl wayland-cursor])
 fi
@@ -446,13 +454,13 @@ fi
 AM_CONDITIONAL(HAVE_PANGO, test "x$have_pango" = "xyes")
 
 AM_CONDITIONAL(HAVE_CAIRO_GLESV2,
-	       [test "x$have_cairo_egl" = "xyes" -a "x$cairo_modules" = "xcairo-glesv2" -a "x$enable_egl" = "xyes"])
+	       [test "x$have_cairo_egl" = "xyes" -a "x$cairo_modules" = "xcairo-glesv2" -a "x$enable_opengl" = "xyes"])
 
 AM_CONDITIONAL(BUILD_FULL_GL_CLIENTS,
-	       test x$cairo_modules = "xcairo-gl" -a "x$have_cairo_egl" = "xyes" -a "x$enable_egl" = "xyes")
+	       test x$cairo_modules = "xcairo-gl" -a "x$have_cairo_egl" = "xyes" -a "x$enable_opengl" = "xyes")
 
 AM_CONDITIONAL(BUILD_SUBSURFACES_CLIENT,
-	       [test '(' "x$have_cairo_egl" != "xyes" -o "x$cairo_modules" = "xcairo-glesv2" ')' -a "x$enable_simple_egl_clients" = "xyes"])
+	       [test '(' "x$have_cairo_egl" != "xyes" -o "x$cairo_modules" = "xcairo-glesv2" ')' -a "x$enable_simple_egl_clients" = "xyes" -a "x$enable_opengl" = "xyes"])
 
 AM_CONDITIONAL(ENABLE_DESKTOP_SHELL, true)
 
@@ -688,6 +696,7 @@ AC_MSG_RESULT([
 
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
+	OpenGL				${enable_opengl}
 	libxkbcommon			${enable_xkbcommon}
 	xcb_xkb				${have_xcb_xkb}
 	XWayland			${enable_xwayland}
