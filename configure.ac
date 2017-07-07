@@ -134,6 +134,7 @@ if test x$enable_egl = xyes; then
 	PKG_CHECK_MODULES(EGL, [egl glesv2])
         PKG_CHECK_MODULES([EGL_TESTS], [egl glesv2 wayland-client wayland-egl])
 	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
+	COMPOSITOR_MODULES="$COMPOSITOR_MODULES egl"
 fi
 
 AC_ARG_ENABLE(xkbcommon,
