@@ -474,7 +474,6 @@ fbdev_output_enable(struct weston_output *base)
 	struct fbdev_backend *backend = to_fbdev_backend(base->compositor);
 	int fb_fd;
 	struct wl_event_loop *loop;
-
 	/* Create the frame buffer. */
 	fb_fd = fbdev_frame_buffer_open(output, output->device, &output->fb_info);
 	if (fb_fd < 0) {
@@ -497,7 +496,7 @@ fbdev_output_enable(struct weston_output *base)
 				return 0;
 			}
 			if (gl_renderer->output_window_create(&output->base,
-						       (EGLNativeWindowType)output->window, NULL,
+						       (EGLNativeWindowType)output->window, (void *)output->window,
 						       gl_renderer->opaque_attribs,
 						       NULL, 0) < 0) {
 				weston_log("gl_renderer_output_create failed.\n");
@@ -822,7 +821,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->base.restore = fbdev_restore;
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
-	backend->use_pixman = !param->use_gl;
+	backend->use_pixman = param->use_pixman;
 	backend->output_transform = param->output_transform;
 
 	weston_setup_vt_switch_bindings(compositor);
@@ -841,7 +840,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			goto out_launcher;
 		}
 		if (gl_renderer->display_create(compositor, NO_EGL_PLATFORM,
-					EGL_DEFAULT_DISPLAY,
+					backend->display,
 					NULL,
 					gl_renderer->opaque_attribs,
 					NULL, 0) < 0) {
@@ -906,8 +905,8 @@ weston_backend_init(struct weston_compositor *compositor,
 	config_init_to_defaults(&config);
 	memcpy(&config, config_base, config_base->struct_size);
 #ifdef ENABLE_EGL
-	if (config.use_pixman)
-		config.use_gl = 0;
+	config.use_pixman =  0;
+	config.use_gl = 1;
 #else
 	config.use_pixman =  1;
 #endif
