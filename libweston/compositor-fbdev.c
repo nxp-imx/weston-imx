@@ -498,7 +498,7 @@ fbdev_output_enable(struct weston_output *base)
 	if (backend->use_pixman) {
 		if (pixman_renderer_output_create(&output->base) < 0)
 			goto out_hw_surface;
-	} else if(backend->use_g2d) {
+	} else if (backend->use_g2d) {
 		const char *g2d_device = output->device;
 		if (backend->clone_mode)
 			g2d_device = backend->clone_device;
@@ -510,18 +510,18 @@ fbdev_output_enable(struct weston_output *base)
 		}
 #ifdef ENABLE_OPENGL
 	} else {
-			output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
-			if (output->window == NULL) {
-				fprintf(stderr, "failed to create window\n");
-				return 0;
-			}
-			if (gl_renderer->output_window_create(&output->base,
-						       (EGLNativeWindowType)output->window, (void *)output->window,
-						       gl_renderer->opaque_attribs,
-						       NULL, 0) < 0) {
-					weston_log("gl_renderer_output_create failed.\n");
-					goto out_hw_surface;
-			}
+		output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
+		if (output->window == NULL) {
+			fprintf(stderr, "failed to create window\n");
+			return 0;
+		}
+		if (gl_renderer->output_window_create(&output->base,
+						   (EGLNativeWindowType)output->window, (void *)output->window,
+						   gl_renderer->opaque_attribs,
+						   NULL, 0) < 0) {
+			weston_log("gl_renderer_output_create failed.\n");
+			goto out_hw_surface;
+		}
 #endif
 	}
 
@@ -850,7 +850,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (backend->use_pixman) {
 		if (pixman_renderer_init(compositor) < 0)
 			goto out_launcher;
-	}else if (backend->use_g2d) {
+	} else if (backend->use_g2d) {
 		int x = 0, y = 0;
 		int i=0;
 		int count = 0;
@@ -871,8 +871,8 @@ fbdev_backend_create(struct weston_compositor *compositor,
 		weston_log("param->device=%s\n",param->device);
 		count = strlen(param->device);
 
-		for(i= 0; i < count; i++) {
-			if(param->device[i] == ',')	{
+		for (i= 0; i < count; i++) {
+			if (param->device[i] == ',') {
 				displays[dispCount][k] = '\0';
 				dispCount++;
 				k = 0;
@@ -883,11 +883,11 @@ fbdev_backend_create(struct weston_compositor *compositor,
 		displays[dispCount][k] = '\0';
 		dispCount++;
 
-		if(backend->clone_mode){
+		if (backend->clone_mode) {
 			if (fbdev_output_create(backend, x, y, displays[0]) < 0)
 				goto out_launcher;
-		}else{
-			for(i= 0; i < dispCount; i++){
+		} else {
+			for (i= 0; i < dispCount; i++) {
 				if (fbdev_output_create(backend, x, y, displays[i]) < 0)
 					goto out_launcher;
 				x += container_of(backend->compositor->output_list.prev,
@@ -896,8 +896,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			}
 		}
 #ifdef ENABLE_OPENGL
-	}
-	else {
+	} else {
 		gl_renderer = weston_load_module("gl-renderer.so",
 						 "gl_renderer_interface");
 		if (!gl_renderer) {
@@ -921,7 +920,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 #endif
 	}
 
-	if(!backend->use_g2d)
+	if (!backend->use_g2d)
 		if (fbdev_output_create(backend, 0, 0, param->device) < 0)
 			goto out_launcher;
 
