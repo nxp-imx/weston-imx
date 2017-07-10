@@ -580,7 +580,9 @@ usage(int error_code)
 		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
 		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
 #endif
-		"  --clone-mode\t\tEnabe clone mode in the G2D renderer\n\n"
+		"  --device=DEVICE[,DEVICE]...\n"
+		"  \t\t\tG2D-only: The framebuffer device(s) to use\n"
+		"  --clone-mode\t\tG2D-only: Duplicate the display on the specified devices\n"
 		"\n");
 #endif
 
