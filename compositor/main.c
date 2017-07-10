@@ -574,11 +574,12 @@ usage(int error_code)
 		"Options for fbdev-backend.so:\n\n"
 		"  --tty=TTY\t\tThe tty to use\n"
 		"  --device=DEVICE\tThe framebuffer device to use\n"
-		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
-#if defined(ENABLE_OPENGL)
-		"  --use-gl\t\tUse the GL renderer\n\n"
+#if !defined(ENABLE_OPENGL)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
+#else
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
 #endif
-		"  --use-g2d\t\tUse the G2D renderer\n\n"
 		"  --clone-mode\t\tEnabe clone mode in the G2D renderer\n\n"
 		"\n");
 #endif
@@ -1452,9 +1453,8 @@ load_fbdev_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_STRING, "device", 0, &config.device },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
 #ifdef ENABLE_OPENGL
-		{ WESTON_OPTION_INTEGER, "use-gl", 0, &config.use_gl },
-#endif
 		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+#endif
 		{ WESTON_OPTION_BOOLEAN, "clone-mode", 0, &config.clone_mode },
 	};
 
@@ -1462,6 +1462,9 @@ load_fbdev_backend(struct weston_compositor *c,
 
 	if (!config.device)
 		config.device = strdup("/dev/fb0");
+#ifndef ENABLE_OPENGL
+	config.use_g2d = 1;
+#endif
 
 	config.base.struct_version = WESTON_FBDEV_BACKEND_CONFIG_VERSION;
 	config.base.struct_size = sizeof(struct weston_fbdev_backend_config);

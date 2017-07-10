@@ -43,7 +43,6 @@ struct weston_fbdev_backend_config {
 
 	int tty;
 	char *device;
-	int use_gl;
 	int use_pixman;
 	int use_g2d;
 	int clone_mode;

@@ -64,7 +64,6 @@ struct fbdev_backend {
 	struct udev_input input;
 	int use_pixman;
 	int use_g2d;
-	int use_gl;
 	int clone_mode;
 	char *clone_device;
 	uint32_t output_transform;
@@ -842,7 +841,6 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->use_pixman = param->use_pixman;
 	backend->use_g2d = param->use_g2d;
-	backend->use_gl = param->use_gl;
 	backend->clone_mode = param->clone_mode;
 	backend->clone_device = param->device;
 	backend->output_transform = param->output_transform;
@@ -922,6 +920,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 		}
 #endif
 	}
+
 	if(!backend->use_g2d)
 		if (fbdev_output_create(backend, 0, 0, param->device) < 0)
 			goto out_launcher;
@@ -952,9 +951,12 @@ config_init_to_defaults(struct weston_fbdev_backend_config *config)
 	 * udev, rather than passing a device node in as a parameter. */
 	config->tty = 0; /* default to current tty */
 	config->device = "/dev/fb0"; /* default frame buffer */
-	config->use_gl = 0;
-	config->use_g2d = 0;
 	config->use_pixman = 0;
+#ifdef ENABLE_OPENGL
+	config->use_g2d = 0;
+#else
+	config->use_g2d = 1;
+#endif
 	config->clone_mode = 0;
 	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
 }
