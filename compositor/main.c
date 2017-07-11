@@ -576,6 +576,8 @@ usage(int error_code)
 		"  --device=DEVICE\tThe framebuffer device to use\n"
 		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
 		"  --use-gl\t\tUse the GL renderer\n\n"
+		"  --use-g2d\t\tUse the G2D renderer\n\n"
+		"  --clone-mode\t\tEnabe clone mode in the G2D renderer\n\n"
 		"\n");
 #endif
 
@@ -1446,8 +1448,10 @@ load_fbdev_backend(struct weston_compositor *c,
 	const struct weston_option fbdev_options[] = {
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_STRING, "device", 0, &config.device },
-	        { WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
-		{ WESTON_OPTION_BOOLEAN, "use-gl", 1, &config.use_gl },
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+		{ WESTON_OPTION_INTEGER, "use-gl", 0, &config.use_gl },
+		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+		{ WESTON_OPTION_BOOLEAN, "clone-mode", 0, &config.clone_mode },
 	};
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);

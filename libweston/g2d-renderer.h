@@ -1,5 +1,6 @@
 /*
- * Copyright © 2016 Benoit Gschwind
+ * Copyright (c) 2015 Freescale Semiconductor, Inc.
+ * Copyright © 2013 Vasily Khoruzhick <anarsoul@gmail.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -22,45 +23,25 @@
  * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
+#ifndef __g2d_renderer_h_
+#define __g2d_renderer_h_
 
-#ifndef WESTON_COMPOSITOR_FBDEV_H
-#define WESTON_COMPOSITOR_FBDEV_H
+#include  "compositor.h"
 
-#ifdef  __cplusplus
-extern "C" {
+#ifdef ENABLE_EGL
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #endif
 
-#include <stdint.h>
+struct g2d_renderer_interface {
 
-#include "compositor.h"
+	int (*create)(struct weston_compositor *ec);
 
-#define WESTON_FBDEV_BACKEND_CONFIG_VERSION 2
+	int (*output_create)(struct weston_output *output,
+		         struct wl_display *wl_display,
+		         const char *device);
 
-struct libinput_device;
-
-struct weston_fbdev_backend_config {
-	struct weston_backend_config base;
-
-	int tty;
-	char *device;
-	int use_gl;
-	int use_pixman;
-	int use_g2d;
-	int clone_mode;
-	uint32_t output_transform;
-
-	/** Callback used to configure input devices.
-	 *
-	 * This function will be called by the backend when a new input device
-	 * needs to be configured.
-	 * If NULL the device will use the default configuration.
-	 */
-	void (*configure_device)(struct weston_compositor *compositor,
-				 struct libinput_device *device);
+	void (*output_destroy)(struct weston_output *output);
 };
 
-#ifdef  __cplusplus
-}
 #endif
-
-#endif /* WESTON_COMPOSITOR_FBDEV_H */

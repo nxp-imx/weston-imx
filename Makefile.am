@@ -326,6 +326,26 @@ gl_renderer_la_SOURCES =			\
 	shared/helpers.h
 endif
 
+module_LTLIBRARIES += g2d-renderer.la
+g2d_renderer_la_LDFLAGS = -module -avoid-version
+g2d_renderer_la_LIBADD = 			\
+	libweston-@LIBWESTON_MAJOR@.la		\
+	$(EGL_LIBS)				\
+	$(COMPOSITOR_LIBS)			\
+	-lg2d
+g2d_renderer_la_CFLAGS =			\
+	$(COMPOSITOR_CFLAGS)			\
+	$(EGL_CFLAGS)				\
+	$(GCC_CFLAGS) -DHAVE_G2D
+g2d_renderer_la_SOURCES =			\
+	libweston/g2d-renderer.h			\
+	libweston/g2d-renderer.c			\
+	libweston/vertex-clipping.c			\
+	libweston/vertex-clipping.h
+if ENABLE_EGL
+g2d_renderer_la_CFLAGS += -DENABLE_EGL
+endif
+
 if ENABLE_X11_COMPOSITOR
 libweston_module_LTLIBRARIES += x11-backend.la
 x11_backend_la_LDFLAGS = -module -avoid-version
