@@ -1906,7 +1906,7 @@ int main(int argc, char *argv[])
 	if (idle_time < 0)
 		weston_config_section_get_int(section, "idle-time", &idle_time, -1);
 	if (idle_time < 0)
-		idle_time = 300; /* default idle timeout, in seconds */
+		idle_time = 0; /* default idle timeout, in seconds */
 
 	ec->idle_time = idle_time;
 	ec->default_pointer_grab = NULL;
