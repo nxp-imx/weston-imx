@@ -37,7 +37,6 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <g2dExt.h>
 #include <HAL/gc_hal.h>
 
 #include "compositor.h"
@@ -94,6 +93,7 @@ struct g2d_output_state {
 	struct fb_screeninfo fb_info;
 	struct fb_screeninfo *mirror_fb_info;
 	struct g2d_surfaceEx *mirrorSurf;
+	struct g2d_surfaceEx *drm_hw_buffer;
 	int directBlit;
 	int clone_display_num;
 	int width;
@@ -125,6 +125,7 @@ struct g2d_renderer {
 	struct wl_display *wl_display;
 #endif
 	void *handle;
+	int use_drm;
 };
 
 static int
@@ -428,6 +429,7 @@ copy_to_framebuffer(struct weston_output *output)
 	{
 		g2dRECT srcRect  = {0, 0, go->offscreenSurface.base.width, go->offscreenSurface.base.height};
 		g2dRECT dstrect  = srcRect;
+		clipRect = srcRect;
 		g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
 		g2d_blitSurface(gr->handle, &go->offscreenSurface,
 			&go->renderSurf[go->activebuffer], &srcRect, &dstrect);
@@ -550,13 +552,20 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	srcRect.top  = ev->geometry.y < 0.0 ? g2d_int_from_double(fabsf(ev->geometry.y)) : 0;
 	srcRect.right  = ev->surface->width;
 	srcRect.bottom = ev->surface->height;
-	if(go->nNumBuffers > 1 || go->directBlit)
+	if(go->drm_hw_buffer && gr->use_drm)
 	{
-		dstsurface = &go->renderSurf[go->activebuffer];
+		dstsurface = go->drm_hw_buffer;
 	}
 	else
 	{
-		dstsurface = &go->offscreenSurface;
+		if(go->nNumBuffers > 1 || go->directBlit)
+		{
+			dstsurface = &go->renderSurf[go->activebuffer];
+		}
+		else
+		{
+			dstsurface = &go->offscreenSurface;
+		}
 	}
 	dstWidth  = dstsurface->base.width;
 	dstHeight = dstsurface->base.height;
@@ -719,7 +728,8 @@ g2d_renderer_repaint_output(struct weston_output *output,
 
 	pixman_region32_copy(&output->previous_damage, output_damage);
 	wl_signal_emit(&output->frame_signal, output);
-	copy_to_framebuffer(output);
+	if(!gr->use_drm)
+		copy_to_framebuffer(output);
 	go->current_buffer ^= 1;
 }
 
@@ -1048,7 +1058,8 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 #ifdef ENABLE_EGL
 	eglUnbindWaylandDisplayWL(gr->egl_display);
 	eglTerminate(gr->egl_display);
-	fbDestroyDisplay(gr->display);
+	if(!gr->use_drm)
+		fbDestroyDisplay(gr->display);
 #endif
 	free(ec->renderer);
 	ec->renderer = NULL;
@@ -1066,7 +1077,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.repaint_output = g2d_renderer_repaint_output;
 	gr->base.flush_damage = g2d_renderer_flush_damage;
 	gr->base.attach = g2d_renderer_attach;
-		gr->base.surface_set_color = g2d_renderer_surface_set_color;
+	gr->base.surface_set_color = g2d_renderer_surface_set_color;
 	gr->base.destroy = g2d_renderer_destroy;
 
 	if(g2d_open(&gr->handle))
@@ -1074,8 +1085,79 @@ g2d_renderer_create(struct weston_compositor *ec)
 		weston_log("g2d_open fail.\n");
 		return -1;
 	}
-	ec->renderer = &gr->base; 
-		wl_signal_init(&gr->destroy_signal);
+	ec->renderer = &gr->base;
+	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
+	wl_signal_init(&gr->destroy_signal);
+	return 0;
+}
+
+static int
+g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
+{
+	struct g2d_renderer *gr;
+	if(g2d_renderer_create(ec) < 0)
+	{
+		weston_log("g2d_renderer_create faile.\n");
+		return -1;
+	}
+#ifdef ENABLE_EGL
+	gr = get_renderer(ec);
+	gr->wl_display = ec->wl_display;
+	gr->egl_display = eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR,
+				native_window, NULL);
+	eglBindWaylandDisplayWL(gr->egl_display, gr->wl_display);
+	gr->use_drm = 1;
+#endif
+	return 0;
+}
+
+static void
+g2d_renderer_output_set_buffer(struct weston_output *output, struct g2d_surfaceEx *buffer)
+{
+	struct g2d_output_state *go = get_output_state(output);
+	go->drm_hw_buffer = buffer;
+}
+
+static int
+g2d_drm_renderer_output_create(struct weston_output *output)
+{
+	struct g2d_output_state *go;
+	int i = 0;
+
+	go = zalloc(sizeof *go);
+	if (go == NULL)
+		return -1;
+	output->renderer_state = go;
+
+	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
+		pixman_region32_init(&go->buffer_damage[i]);
+    return 0;
+ }
+
+static int
+drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
+				enum g2d_format g2dFormat,
+				void *vaddr,
+				int w, int h, int stride, int size)
+{
+	struct g2d_buf * buffer = NULL;
+	buffer = g2d_buf_from_virt_addr(vaddr, size);
+	if (!buffer)
+		return -1;
+
+	g2dSurface->base.planes[0] = buffer->buf_paddr;
+	g2dSurface->base.left = 0;
+	g2dSurface->base.top  = 0;
+	g2dSurface->base.right  = w;
+	g2dSurface->base.bottom = h;
+	g2dSurface->base.stride = w;
+	g2dSurface->base.width  = w;
+	g2dSurface->base.height = h;
+	g2dSurface->base.format = g2dFormat;
+	g2dSurface->base.rot    = G2D_ROTATION_0;
+	g2dSurface->base.clrcolor = 0xFF400000;
+	g2dSurface->tiling = G2D_LINEAR;
+
 	return 0;
 }
 
@@ -1333,6 +1415,10 @@ g2d_renderer_output_create(struct weston_output *output, struct wl_display *wl_d
 
  WL_EXPORT struct g2d_renderer_interface g2d_renderer_interface = {
 	.create = g2d_renderer_create,
+	.drm_display_create = g2d_drm_display_create,
+	.drm_output_create = g2d_drm_renderer_output_create,
 	.output_create = g2d_renderer_output_create,
+	.create_g2d_image = drm_create_g2d_image,
+	.output_set_buffer = g2d_renderer_output_set_buffer,
 	.output_destroy = g2d_renderer_output_destroy,
 };

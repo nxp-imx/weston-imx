@@ -27,6 +27,7 @@
 #define __g2d_renderer_h_
 
 #include  "compositor.h"
+#include <g2dExt.h>
 
 #ifdef ENABLE_EGL
 #include <EGL/egl.h>
@@ -37,9 +38,21 @@ struct g2d_renderer_interface {
 
 	int (*create)(struct weston_compositor *ec);
 
+	int (*drm_display_create)(struct weston_compositor *ec, void *native_window);
+
+	int (*drm_output_create)(struct weston_output *output);
+
 	int (*output_create)(struct weston_output *output,
 		         struct wl_display *wl_display,
 		         const char *device);
+
+	int (*create_g2d_image)(struct g2d_surfaceEx* g2dSurface,
+				enum g2d_format g2dFormat,
+				void *vaddr,
+				int w, int h, int stride, int size);
+
+	void (*output_set_buffer)(struct weston_output *output,
+				struct g2d_surfaceEx *buffer);
 
 	void (*output_destroy)(struct weston_output *output);
 };
