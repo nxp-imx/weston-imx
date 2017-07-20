@@ -240,8 +240,9 @@ calculate_pixman_format(struct fb_var_screeninfo *vinfo,
 	switch(finfo->visual) {
 		case FB_VISUAL_TRUECOLOR:
 		case FB_VISUAL_DIRECTCOLOR:
-			if (vinfo->grayscale != 0)
-				return 0;
+			/* vinfo->grayscale != 0 in 8mqevk board
+				if (vinfo->grayscale != 0)
+				return 0; */
 		break;
 		default:
 			return 0;
