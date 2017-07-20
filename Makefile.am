@@ -327,7 +327,7 @@ gl_renderer_la_SOURCES =			\
 	shared/helpers.h
 endif
 
-module_LTLIBRARIES += g2d-renderer.la
+libweston_module_LTLIBRARIES += g2d-renderer.la
 g2d_renderer_la_LDFLAGS = -module -avoid-version
 g2d_renderer_la_LIBADD = 			\
 	libweston-@LIBWESTON_MAJOR@.la		\
