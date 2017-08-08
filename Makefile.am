@@ -188,7 +188,9 @@ nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES =				\
 	protocol/weston-touch-calibration-protocol.c			\
 	protocol/weston-touch-calibration-server-protocol.h		\
 	protocol/linux-explicit-synchronization-unstable-v1-protocol.c	\
-	protocol/linux-explicit-synchronization-unstable-v1-server-protocol.h
+	protocol/linux-explicit-synchronization-unstable-v1-server-protocol.h \
+	protocol/alpha-compositing-unstable-v1-protocol.c		\
+	protocol/alpha-compositing-unstable-v1-server-protocol.h
 
 BUILT_SOURCES += $(nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES)
 
@@ -1009,7 +1011,9 @@ BUILT_SOURCES +=					\
 	protocol/xdg-output-unstable-v1-protocol.c			\
 	protocol/xdg-output-unstable-v1-client-protocol.h		\
 	protocol/linux-explicit-synchronization-unstable-v1-protocol.c	\
-	protocol/linux-explicit-synchronization-unstable-v1-client-protocol.h
+	protocol/linux-explicit-synchronization-unstable-v1-client-protocol.h \
+	protocol/alpha-compositing-unstable-v1-protocol.c	\
+	protocol/alpha-compositing-unstable-v1-client-protocol.h
 
 westondatadir = $(datadir)/weston
 dist_westondata_DATA =				\
