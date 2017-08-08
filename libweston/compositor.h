@@ -1059,6 +1059,8 @@ struct weston_view {
 
 	pixman_region32_t clip;          /* See weston_view_damage_below() */
 	float alpha;                     /* part of geometry, see below */
+	float blending_alpha;
+	int blending_equation;
 
 	void *renderer_state;
 
@@ -1157,6 +1159,9 @@ struct weston_surface_state {
 	/* wp_viewport.set_source */
 	/* wp_viewport.set_destination */
 	struct weston_buffer_viewport buffer_viewport;
+
+	float blending_alpha;
+	int blending_equation;
 };
 
 struct weston_surface_activation_data {
@@ -1238,6 +1243,8 @@ struct weston_surface {
 
 	/* wp_viewport resource for this surface */
 	struct wl_resource *viewport_resource;
+
+	struct wl_resource *blending_resource;
 
 	/* All the pending state, that wl_surface.commit will apply. */
 	struct weston_surface_state pending;

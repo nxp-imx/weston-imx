@@ -166,7 +166,9 @@ nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES =				\
 	protocol/pointer-constraints-unstable-v1-protocol.c		\
 	protocol/pointer-constraints-unstable-v1-server-protocol.h      \
 	protocol/input-timestamps-unstable-v1-protocol.c		\
-	protocol/input-timestamps-unstable-v1-server-protocol.h
+	protocol/input-timestamps-unstable-v1-server-protocol.h		\
+	protocol/alpha-compositing-unstable-v1-protocol.c		\
+	protocol/alpha-compositing-unstable-v1-server-protocol.h
 
 BUILT_SOURCES += $(nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES)
 
@@ -633,6 +635,8 @@ weston_simple_egl_SOURCES = clients/simple-egl.c
 nodist_weston_simple_egl_SOURCES =		\
 	protocol/xdg-shell-unstable-v6-protocol.c		\
 	protocol/xdg-shell-unstable-v6-client-protocol.h	\
+	protocol/alpha-compositing-unstable-v1-protocol.c	\
+	protocol/alpha-compositing-unstable-v1-client-protocol.h	\
 	protocol/ivi-application-protocol.c		\
 	protocol/ivi-application-client-protocol.h
 weston_simple_egl_CFLAGS = $(AM_CFLAGS) $(SIMPLE_EGL_CLIENT_CFLAGS)
@@ -914,7 +918,9 @@ BUILT_SOURCES +=					\
 	protocol/linux-dmabuf-unstable-v1-protocol.c	\
 	protocol/linux-dmabuf-unstable-v1-client-protocol.h		\
 	protocol/input-timestamps-unstable-v1-protocol.c		\
-	protocol/input-timestamps-unstable-v1-client-protocol.h
+	protocol/input-timestamps-unstable-v1-client-protocol.h		\
+	protocol/alpha-compositing-unstable-v1-protocol.c	\
+	protocol/alpha-compositing-unstable-v1-client-protocol.h
 
 westondatadir = $(datadir)/weston
 dist_westondata_DATA =				\
