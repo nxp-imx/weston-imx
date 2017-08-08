@@ -10,6 +10,8 @@ srcs_renderer_gl = [
 	'gl-renderer.c',
 	linux_dmabuf_unstable_v1_protocol_c,
 	linux_dmabuf_unstable_v1_server_protocol_h,
+	alpha_compositing_unstable_v1_protocol_c,
+	alpha_compositing_unstable_v1_server_protocol_h,
 ]
 
 deps_renderer_gl = [
