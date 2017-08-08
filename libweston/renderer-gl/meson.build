@@ -26,6 +26,8 @@ srcs_renderer_gl = [
 	'gl-shader-config-color-transformation.c',
 	linux_dmabuf_unstable_v1_protocol_c,
 	linux_dmabuf_unstable_v1_server_protocol_h,
+	alpha_compositing_unstable_v1_protocol_c,
+	alpha_compositing_unstable_v1_server_protocol_h,
 	vertex_glsl,
 ]
 
