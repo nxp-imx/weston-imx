@@ -53,6 +53,7 @@
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 #include "linux-explicit-synchronization.h"
 #include "pixel-formats.h"
+#include "alpha-compositing-unstable-v1-server-protocol.h"
 
 #include "shared/fd-util.h"
 #include "shared/helpers.h"
@@ -1006,6 +1007,8 @@ draw_paint_node(struct weston_paint_node *pnode,
 	pixman_region32_t repaint;
 	/* opaque region in surface coordinates: */
 	pixman_region32_t surface_opaque;
+	pixman_region32_t surface_opaque_full;
+	pixman_region32_t *surface_opaque_src_ptr;
 	/* non-opaque region in surface coordinates: */
 	pixman_region32_t surface_blend;
 	GLint filter;
@@ -1027,6 +1030,18 @@ draw_paint_node(struct weston_paint_node *pnode,
 		goto out;
 
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	if (pnode->view->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_PREMULTIPLIED) {
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	} else if (pnode->view->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_STRAIGHT) {
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	} else {
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	}
+
+	if (pnode->view->blending_equation != ZWP_BLENDING_V1_BLENDING_EQUATION_NONE &&
+	    pnode->view->blending_equation != ZWP_BLENDING_V1_BLENDING_EQUATION_OPAQUE) {
+		pnode->view->alpha = pnode->view->alpha * pnode->view->blending_alpha;
+	}
 
 	if (pnode->view->transform.enabled ||
 	    pnode->output->current_scale != pnode->surface->buffer_viewport.buffer.scale)
@@ -1046,14 +1061,23 @@ draw_paint_node(struct weston_paint_node *pnode,
 	pixman_region32_subtract(&surface_blend, &surface_blend,
 				 &pnode->surface->opaque);
 
+	if (pnode->view->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_OPAQUE) {
+		pixman_region32_clear(&surface_blend);
+		pixman_region32_init_rect(&surface_opaque_full, 0, 0,
+					  pnode->view->surface->width, pnode->view->surface->height);
+		surface_opaque_src_ptr = &surface_opaque_full;
+	} else {
+		surface_opaque_src_ptr = &pnode->view->surface->opaque;
+	}
+
 	/* XXX: Should we be using ev->transform.opaque here? */
 	pixman_region32_init(&surface_opaque);
 	if (pnode->view->geometry.scissor_enabled)
 		pixman_region32_intersect(&surface_opaque,
-					  &pnode->surface->opaque,
+					  surface_opaque_src_ptr,
 					  &pnode->view->geometry.scissor);
 	else
-		pixman_region32_copy(&surface_opaque, &pnode->surface->opaque);
+		pixman_region32_copy(&surface_opaque, surface_opaque_src_ptr);
 
 	maybe_censor_override(&sconf, pnode->output, pnode->view);
 
