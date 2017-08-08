@@ -51,6 +51,7 @@
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 #include "linux-explicit-synchronization.h"
 #include "pixel-formats.h"
+#include "alpha-compositing-unstable-v1-server-protocol.h"
 
 #include "shared/fd-util.h"
 #include "shared/helpers.h"
@@ -752,11 +753,17 @@ shader_uniforms(struct gl_shader *shader,
 	int i;
 	struct gl_surface_state *gs = get_surface_state(view->surface);
 	struct gl_output_state *go = get_output_state(output);
+	float alpha = view->alpha;
+
+	if (view->blending_equation != ZWP_BLENDING_V1_BLENDING_EQUATION_NONE &&
+	    view->blending_equation != ZWP_BLENDING_V1_BLENDING_EQUATION_OPAQUE) {
+		alpha *= view->blending_alpha;
+	}
 
 	glUniformMatrix4fv(shader->proj_uniform,
 			   1, GL_FALSE, go->output_matrix.d);
 	glUniform4fv(shader->color_uniform, 1, gs->color);
-	glUniform1f(shader->alpha_uniform, view->alpha);
+	glUniform1f(shader->alpha_uniform, alpha);
 
 	for (i = 0; i < gs->num_textures; i++)
 		glUniform1i(shader->tex_uniforms[i], i);
@@ -891,6 +898,8 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	pixman_region32_t repaint;
 	/* opaque region in surface coordinates: */
 	pixman_region32_t surface_opaque;
+	pixman_region32_t surface_opaque_full;
+	pixman_region32_t *surface_opaque_src_ptr;
 	/* non-opaque region in surface coordinates: */
 	pixman_region32_t surface_blend;
 	GLint filter;
@@ -917,6 +926,13 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	replaced_shader = setup_censor_overrides(output, ev);
 
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	if (ev->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_PREMULTIPLIED) {
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	} else if (ev->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_STRAIGHT) {
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	} else {
+		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	}
 
 	if (gr->fan_debug) {
 		use_shader(gr, &gr->solid_shader);
@@ -948,14 +964,23 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	pixman_region32_subtract(&surface_blend, &surface_blend,
 				 &ev->surface->opaque);
 
+	if (ev->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_OPAQUE) {
+		pixman_region32_clear(&surface_blend);
+		pixman_region32_init_rect(&surface_opaque_full, 0, 0,
+					  ev->surface->width, ev->surface->height);
+		surface_opaque_src_ptr = &surface_opaque_full;
+	} else {
+		surface_opaque_src_ptr = &ev->surface->opaque;
+	}
+
 	/* XXX: Should we be using ev->transform.opaque here? */
 	pixman_region32_init(&surface_opaque);
 	if (ev->geometry.scissor_enabled)
 		pixman_region32_intersect(&surface_opaque,
-					  &ev->surface->opaque,
+					  surface_opaque_src_ptr,
 					  &ev->geometry.scissor);
 	else
-		pixman_region32_copy(&surface_opaque, &ev->surface->opaque);
+		pixman_region32_copy(&surface_opaque, surface_opaque_src_ptr);
 
 	if (pixman_region32_not_empty(&surface_opaque)) {
 		if (gs->shader == &gr->texture_shader_rgba) {
