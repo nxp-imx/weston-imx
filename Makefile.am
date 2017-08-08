@@ -169,7 +169,9 @@ nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES =				\
 	protocol/input-timestamps-unstable-v1-protocol.c		\
 	protocol/input-timestamps-unstable-v1-server-protocol.h		\
 	protocol/weston-touch-calibration-protocol.c			\
-	protocol/weston-touch-calibration-server-protocol.h
+	protocol/weston-touch-calibration-server-protocol.h		\
+	protocol/alpha-compositing-unstable-v1-protocol.c		\
+	protocol/alpha-compositing-unstable-v1-server-protocol.h
 
 BUILT_SOURCES += $(nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES)
 
@@ -635,6 +637,8 @@ weston_simple_egl_SOURCES = clients/simple-egl.c
 nodist_weston_simple_egl_SOURCES =		\
 	protocol/xdg-shell-unstable-v6-protocol.c		\
 	protocol/xdg-shell-unstable-v6-client-protocol.h	\
+	protocol/alpha-compositing-unstable-v1-protocol.c	\
+	protocol/alpha-compositing-unstable-v1-client-protocol.h	\
 	protocol/ivi-application-protocol.c		\
 	protocol/ivi-application-client-protocol.h
 weston_simple_egl_CFLAGS = $(AM_CFLAGS) $(SIMPLE_EGL_CLIENT_CFLAGS)
@@ -934,7 +938,9 @@ BUILT_SOURCES +=					\
 	protocol/tablet-unstable-v2-protocol.c		\
 	protocol/tablet-unstable-v2-client-protocol.h			\
 	protocol/input-timestamps-unstable-v1-protocol.c		\
-	protocol/input-timestamps-unstable-v1-client-protocol.h
+	protocol/input-timestamps-unstable-v1-client-protocol.h		\
+	protocol/alpha-compositing-unstable-v1-protocol.c	\
+	protocol/alpha-compositing-unstable-v1-client-protocol.h
 
 westondatadir = $(datadir)/weston
 dist_westondata_DATA =				\
