@@ -39,6 +39,8 @@ srcs_libweston = [
 	linux_dmabuf_unstable_v1_server_protocol_h,
 	linux_explicit_synchronization_unstable_v1_protocol_c,
 	linux_explicit_synchronization_unstable_v1_server_protocol_h,
+	alpha_compositing_unstable_v1_protocol_c,
+	alpha_compositing_unstable_v1_server_protocol_h,
 	input_method_unstable_v1_protocol_c,
 	input_method_unstable_v1_server_protocol_h,
 	input_timestamps_unstable_v1_protocol_c,
