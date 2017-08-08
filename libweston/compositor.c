@@ -58,6 +58,7 @@
 #include <libweston/libweston.h>
 #include <libweston/weston-log.h>
 #include "linux-dmabuf.h"
+#include "alpha-compositing-unstable-v1-server-protocol.h"
 #include "viewporter-server-protocol.h"
 #include "presentation-time-server-protocol.h"
 #include "xdg-output-unstable-v1-server-protocol.h"
@@ -400,6 +401,8 @@ weston_view_create(struct weston_surface *surface)
 	pixman_region32_init(&view->clip);
 
 	view->alpha = 1.0;
+	view->blending_alpha = 1.0;
+	view->blending_equation = ZWP_BLENDING_V1_BLENDING_EQUATION_NONE;
 	pixman_region32_init(&view->transform.opaque);
 
 	wl_list_init(&view->geometry.transformation_list);
@@ -540,6 +543,9 @@ weston_surface_state_init(struct weston_surface_state *state)
 
 	state->desired_protection = WESTON_HDCP_DISABLE;
 	state->protection_mode = WESTON_SURFACE_PROTECTION_MODE_RELAXED;
+
+	state->blending_equation = ZWP_BLENDING_V1_BLENDING_EQUATION_NONE;
+	state->blending_alpha = 1.0;
 }
 
 static void
@@ -2375,6 +2381,9 @@ destroy_surface(struct wl_resource *resource)
 					  NULL);
 	}
 
+	if (surface->blending_resource)
+		wl_resource_set_user_data(surface->blending_resource, NULL);
+
 	weston_surface_destroy(surface);
 }
 
@@ -3898,6 +3907,12 @@ weston_surface_commit_state(struct weston_surface *surface,
 	weston_surface_set_desired_protection(surface, state->desired_protection);
 
 	wl_signal_emit(&surface->commit_signal, surface);
+
+	/* zwp_alpha_compositing.blending */
+	wl_list_for_each(view, &surface->views, surface_link) {
+		view->blending_alpha = state->blending_alpha;
+		view->blending_equation = state->blending_equation;
+	}
 }
 
 static void
@@ -7398,6 +7413,129 @@ bind_presentation(struct wl_client *client,
 }
 
 static void
+destroy_blending(struct wl_resource *resource)
+{
+	struct weston_surface *surface =
+		wl_resource_get_user_data(resource);
+
+	if (!surface)
+		return;
+
+	pixman_region32_union_rect(&surface->pending.damage_surface,
+				   &surface->pending.damage_surface,
+				   0, 0, surface->width, surface->height);
+	surface->blending_resource = NULL;
+	surface->pending.blending_equation = ZWP_BLENDING_V1_BLENDING_EQUATION_NONE;
+	surface->pending.blending_alpha = 1.0;
+}
+
+static void
+blending_destroy(struct wl_client *client,
+		 struct wl_resource *resource)
+{
+	wl_resource_destroy(resource);
+}
+
+static void
+blending_set_blending(struct wl_client *client,
+		      struct wl_resource *resource,
+		      uint32_t equation)
+{
+	struct weston_surface *surface =
+		wl_resource_get_user_data(resource);
+
+	if (!surface)
+		return;
+
+	pixman_region32_union_rect(&surface->pending.damage_surface,
+				   &surface->pending.damage_surface,
+				   0, 0, surface->width, surface->height);
+	surface->pending.blending_equation = equation;
+}
+
+static void
+blending_set_alpha(struct wl_client *client,
+		   struct wl_resource *resource,
+		   wl_fixed_t alpha)
+{
+	struct weston_surface *surface =
+		wl_resource_get_user_data(resource);
+
+	if (!surface)
+		return;
+
+	pixman_region32_union_rect(&surface->pending.damage_surface,
+				   &surface->pending.damage_surface,
+				   0, 0, surface->width, surface->height);
+	surface->pending.blending_alpha = wl_fixed_to_double(alpha);
+}
+
+static const struct zwp_blending_v1_interface blending_interface = {
+	blending_destroy,
+	blending_set_blending,
+	blending_set_alpha
+};
+
+static void
+alpha_compositing_destroy(struct wl_client *client,
+			  struct wl_resource *resource)
+{
+	wl_resource_destroy(resource);
+}
+
+static void
+alpha_compositing_get_blending(struct wl_client *client,
+			       struct wl_resource *alpha_compositing,
+			       uint32_t id,
+			       struct wl_resource *surface_resource)
+{
+	struct weston_surface *surface =
+		wl_resource_get_user_data(surface_resource);
+	struct wl_resource *resource;
+
+	if (surface->blending_resource) {
+		wl_resource_post_error(alpha_compositing,
+			ZWP_ALPHA_COMPOSITING_V1_ERROR_BLENDING_EXISTS,
+			"a blending for that surface already exists");
+		return;
+	}
+
+	resource = wl_resource_create(client, &zwp_blending_v1_interface,
+				      1, id);
+	if (resource == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
+	wl_resource_set_implementation(resource, &blending_interface,
+				       surface, destroy_blending);
+
+	surface->blending_resource = resource;
+}
+
+static const struct zwp_alpha_compositing_v1_interface alpha_compositing_interface = {
+	alpha_compositing_destroy,
+	alpha_compositing_get_blending,
+};
+
+static void
+bind_alpha_compositing(struct wl_client *client,
+		       void *data, uint32_t version, uint32_t id)
+{
+	struct wl_resource *resource;
+
+	resource = wl_resource_create(client, &zwp_alpha_compositing_v1_interface,
+				      version, id);
+	if (resource == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
+	wl_resource_set_implementation(resource, &alpha_compositing_interface,
+				       NULL, NULL);
+}
+
+static void
 compositor_bind(struct wl_client *client,
 		void *data, uint32_t version, uint32_t id)
 {
@@ -7772,6 +7910,10 @@ weston_compositor_create(struct wl_display *display,
 
 	if (!wl_global_create(ec->wl_display, &wp_presentation_interface, 1,
 			      ec, bind_presentation))
+		goto fail;
+
+	if (!wl_global_create(ec->wl_display, &zwp_alpha_compositing_v1_interface, 1,
+			      ec, bind_alpha_compositing))
 		goto fail;
 
 	if (weston_input_init(ec) != 0)
