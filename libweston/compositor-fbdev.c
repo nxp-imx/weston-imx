@@ -633,7 +633,7 @@ fbdev_output_destroy(struct weston_output *base)
 	}
 	close(output->fb_fd);
 	/* Remove the output. */
-	weston_output_destroy(&output->base);
+	weston_output_release(&output->base);
 
 	free(output->device);
 	free(output);
