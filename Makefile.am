@@ -327,6 +327,7 @@ gl_renderer_la_SOURCES =			\
 	shared/helpers.h
 endif
 
+if ENABLE_IMXG2D
 libweston_module_LTLIBRARIES += g2d-renderer.la
 g2d_renderer_la_LDFLAGS = -module -avoid-version
 g2d_renderer_la_LIBADD = 			\
@@ -345,6 +346,7 @@ g2d_renderer_la_SOURCES =			\
 	libweston/vertex-clipping.h
 if ENABLE_EGL
 g2d_renderer_la_CFLAGS += -DENABLE_EGL
+endif
 endif
 
 if ENABLE_X11_COMPOSITOR

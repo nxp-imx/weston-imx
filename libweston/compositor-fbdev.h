@@ -44,8 +44,10 @@ struct weston_fbdev_backend_config {
 	int tty;
 	char *device;
 	int use_pixman;
+#if defined(ENABLE_IMXG2D)
 	int use_g2d;
 	int clone_mode;
+#endif
 	uint32_t output_transform;
 
 	/** Callback used to configure input devices.

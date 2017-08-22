@@ -53,7 +53,9 @@
 #include "gl-renderer.h"
 #endif
 #include "presentation-time-server-protocol.h"
+#ifdef ENABLE_IMXG2D
 #include "g2d-renderer.h"
+#endif
 
 struct fbdev_backend {
 	struct weston_backend base;
@@ -63,9 +65,11 @@ struct fbdev_backend {
 	struct udev *udev;
 	struct udev_input input;
 	int use_pixman;
+#ifdef ENABLE_IMXG2D
 	int use_g2d;
 	int clone_mode;
 	char *clone_device;
+#endif
 	uint32_t output_transform;
 	struct wl_listener session_listener;
 #ifdef ENABLE_EGL
@@ -112,7 +116,9 @@ struct fbdev_output {
 #ifdef ENABLE_OPENGL
 struct gl_renderer_interface *gl_renderer;
 #endif
+#ifdef ENABLE_IMXG2D
 struct g2d_renderer_interface *g2d_renderer;
+#endif
 
 static const char default_seat[] = "seat0";
 
@@ -492,6 +498,7 @@ fbdev_output_enable(struct weston_output *base)
 	if (backend->use_pixman) {
 		if (pixman_renderer_output_create(&output->base) < 0)
 			goto out_hw_surface;
+#ifdef ENABLE_IMXG2D
 	} else if (backend->use_g2d) {
 		const char *g2d_device = output->device;
 		if (backend->clone_mode)
@@ -502,6 +509,7 @@ fbdev_output_enable(struct weston_output *base)
 			weston_log("g2d_renderer_output_create failed.\n");
 			goto out_hw_surface;
 		}
+#endif
 #ifdef ENABLE_OPENGL
 	} else {
 		output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
@@ -616,8 +624,10 @@ fbdev_output_destroy(struct weston_output *base)
 	if (backend->use_pixman) {
 		if (base->renderer_state != NULL)
 			pixman_renderer_output_destroy(base);
+#ifdef ENABLE_IMXG2D
 	} else if (backend->use_g2d) {
 		g2d_renderer->output_destroy(base);
+#endif
 #ifdef ENABLE_OPENGL
 	} else {
 		gl_renderer->output_destroy(base);
@@ -830,9 +840,11 @@ fbdev_backend_create(struct weston_compositor *compositor,
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->use_pixman = param->use_pixman;
+#ifdef ENABLE_IMXG2D
 	backend->use_g2d = param->use_g2d;
 	backend->clone_mode = param->clone_mode;
 	backend->clone_device = param->device;
+#endif
 	backend->output_transform = param->output_transform;
 
 	weston_setup_vt_switch_bindings(compositor);
@@ -840,6 +852,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (backend->use_pixman) {
 		if (pixman_renderer_init(compositor) < 0)
 			goto out_launcher;
+#ifdef ENABLE_IMXG2D
 	} else if (backend->use_g2d) {
 		int x = 0, y = 0;
 		int i=0;
@@ -885,6 +898,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 						link)->width;
 			}
 		}
+#endif
 #ifdef ENABLE_OPENGL
 	} else {
 		gl_renderer = weston_load_module("gl-renderer.so",
@@ -910,7 +924,9 @@ fbdev_backend_create(struct weston_compositor *compositor,
 #endif
 	}
 
+#ifdef ENABLE_IMXG2D
 	if (!backend->use_g2d)
+#endif
 		if (fbdev_output_create(backend, 0, 0, param->device) < 0)
 			goto out_launcher;
 
@@ -941,12 +957,14 @@ config_init_to_defaults(struct weston_fbdev_backend_config *config)
 	config->tty = 0; /* default to current tty */
 	config->device = "/dev/fb0"; /* default frame buffer */
 	config->use_pixman = 0;
+#ifdef ENABLE_IMXG2D
 #ifdef ENABLE_OPENGL
 	config->use_g2d = 0;
 #else
 	config->use_g2d = 1;
 #endif
 	config->clone_mode = 0;
+#endif
 	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
 }
 

@@ -145,6 +145,13 @@ if test x$enable_egl = xyes -a x$enable_opengl = xyes; then
 	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
 fi
  
+AC_ARG_ENABLE(imxg2d, [  --disable-imxg2d],,
+              enable_imxg2d=yes)
+AM_CONDITIONAL(ENABLE_IMXG2D, test x$enable_imxg2d = xyes)
+if test x$enable_imxg2d = xyes; then
+	AC_DEFINE([ENABLE_IMXG2D], [1], [Build Weston with i.MX G2D support])
+fi
+ 
 AC_ARG_ENABLE(xkbcommon,
 	      AS_HELP_STRING([--disable-xkbcommon], [Disable libxkbcommon
 			      support: This is only useful in environments
@@ -697,6 +704,7 @@ AC_MSG_RESULT([
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
 	OpenGL				${enable_opengl}
+	i.MX G2D Renderer		${enable_imxg2d}
 	libxkbcommon			${enable_xkbcommon}
 	xcb_xkb				${have_xcb_xkb}
 	XWayland			${enable_xwayland}

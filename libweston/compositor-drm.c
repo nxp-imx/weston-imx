@@ -54,7 +54,9 @@
 #if defined(ENABLE_OPENGL)
 #include "gl-renderer.h"
 #endif
+#if defined(ENABLE_IMXG2D)
 #include "g2d-renderer.h"
+#endif
 #include "weston-egl-ext.h"
 #include "pixman-renderer.h"
 #include "libbacklight.h"
@@ -115,7 +117,9 @@ struct drm_backend {
 	int cursors_are_broken;
 
 	int use_pixman;
+#if defined(ENABLE_IMXG2D)
 	int use_g2d;
+#endif
 
 	struct udev_input input;
 
@@ -181,7 +185,9 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	pixman_image_t *image[2];
+#if defined(ENABLE_IMXG2D)
 	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
 	pixman_region32_t previous_damage;
 
@@ -217,7 +223,9 @@ struct drm_sprite {
 #if defined(ENABLE_OPENGL)
 static struct gl_renderer_interface *gl_renderer;
 #endif
+#if defined(ENABLE_IMXG2D)
 static struct g2d_renderer_interface *g2d_renderer;
+#endif
 
 static const char default_seat[] = "seat0";
 
@@ -642,6 +650,7 @@ drm_output_render_pixman(struct drm_output *output, pixman_region32_t *damage)
 	pixman_region32_fini(&previous_damage);
 }
 
+#if defined(ENABLE_IMXG2D)
 static void
 drm_output_render_g2d(struct drm_output *output, pixman_region32_t *damage)
 {
@@ -667,6 +676,7 @@ drm_output_render_g2d(struct drm_output *output, pixman_region32_t *damage)
 	pixman_region32_fini(&total_damage);
 	pixman_region32_fini(&previous_damage);
 }
+#endif
 
 static void
 drm_output_render(struct drm_output *output, pixman_region32_t *damage)
@@ -676,8 +686,10 @@ drm_output_render(struct drm_output *output, pixman_region32_t *damage)
 
 	if (b->use_pixman)
 		drm_output_render_pixman(output, damage);
+#if defined(ENABLE_IMXG2D)
 	else if (b->use_g2d)
 		drm_output_render_g2d(output, damage);
+#endif
 #if defined(ENABLE_OPENGL)
 	else
 		drm_output_render_gl(output, damage);
@@ -1471,10 +1483,12 @@ static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b);
 static void
 drm_output_fini_pixman(struct drm_output *output);
+#if defined(ENABLE_IMXG2D)
 static int
 drm_output_init_g2d(struct drm_output *output, struct drm_backend *b);
 static void
 drm_output_fini_g2d(struct drm_output *output);
+#endif
 
 static int
 drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mode)
@@ -1523,6 +1537,7 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
+#if defined(ENABLE_IMXG2D)
 	} else if (b->use_g2d) {
 		drm_output_fini_g2d(output);
 		if (drm_output_init_g2d(output, b) < 0) {
@@ -1530,6 +1545,7 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
+#endif
 #if defined(ENABLE_OPENGL)
 	} else {
 		drm_output_fini_egl(output);
@@ -1709,6 +1725,7 @@ init_pixman(struct drm_backend *b)
 	return pixman_renderer_init(b->compositor);
 }
 
+#if defined(ENABLE_IMXG2D)
 static int
 drm_backend_create_g2d_renderer(struct drm_backend *b)
 {
@@ -1719,7 +1736,9 @@ drm_backend_create_g2d_renderer(struct drm_backend *b)
 
 	return 0;
 }
+#endif
 
+#if defined(ENABLE_IMXG2D)
 static int
 init_g2d(struct drm_backend *b)
 {
@@ -1741,6 +1760,8 @@ init_g2d(struct drm_backend *b)
 
 	return 0;
 }
+#endif
+
 /**
  * Add a mode to output's mode list
  *
@@ -2092,6 +2113,7 @@ drm_output_fini_pixman(struct drm_output *output)
 	}
 }
 
+#if defined(ENABLE_IMXG2D)
 static int
 drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 {
@@ -2159,7 +2181,9 @@ err:
 
 	return -1;
 }
+#endif
 
+#if defined(ENABLE_IMXG2D)
 static void
 drm_output_fini_g2d(struct drm_output *output)
 {
@@ -2173,6 +2197,7 @@ drm_output_fini_g2d(struct drm_output *output)
 	}
 	g2d_renderer->output_destroy(&output->base);
 }
+#endif
 
 static void
 edid_parse_string(const uint8_t *data, char text[])
@@ -2612,11 +2637,13 @@ drm_output_enable(struct weston_output *base)
 			weston_log("Failed to init output pixman state\n");
 			goto err_free;
 		}
+#if defined(ENABLE_IMXG2D)
 	} else if (b->use_g2d) {
 		if (drm_output_init_g2d(output, b) < 0) {
 			weston_log("Failed to init output g2d state\n");
 			goto err_free;
 		}
+#endif
 #if defined(ENABLE_OPENGL)
 	} else if (drm_output_init_egl(output, b) < 0) {
 		weston_log("Failed to init output gl state\n");
@@ -2685,8 +2712,10 @@ drm_output_deinit(struct weston_output *base)
 
 	if (b->use_pixman)
 		drm_output_fini_pixman(output);
+#if defined(ENABLE_IMXG2D)
 	else if (b->use_g2d)
 		drm_output_fini_g2d(output);
+#endif
 #if defined(ENABLE_OPENGL)
 	else
 		drm_output_fini_egl(output);
@@ -3405,7 +3434,9 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->sprites_are_broken = 1;
 	b->compositor = compositor;
 	b->use_pixman = config->use_pixman;
+#if defined(ENABLE_IMXG2D)
 	b->use_g2d = config->use_g2d;
+#endif
 
 	if (parse_gbm_format(config->gbm_format, GBM_FORMAT_XRGB8888, &b->gbm_format) < 0)
 		goto err_compositor;
@@ -3448,11 +3479,13 @@ drm_backend_create(struct weston_compositor *compositor,
 			weston_log("failed to initialize pixman renderer\n");
 			goto err_udev_dev;
 		}
+#if defined(ENABLE_IMXG2D)
 	} else if(b->use_g2d){
 		if (init_g2d(b) < 0) {
 			weston_log("failed to initialize g2d render\n");
 			goto err_udev_dev;
 		}
+#endif
 #if defined(ENABLE_OPENGL)
 	} else {
 		if (init_egl(b) < 0) {
@@ -3571,10 +3604,12 @@ err_compositor:
 static void
 config_init_to_defaults(struct weston_drm_backend_config *config)
 {
-	config->use_pixman = 0;
-#ifdef ENABLE_OPENGL
-	config->use_g2d = 0;
+#if !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config->use_pixman = 1;
 #else
+	config->use_pixman = 0;
+#endif
+#if !defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
 	config->use_g2d = 1;
 #endif
 }
