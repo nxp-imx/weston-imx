@@ -565,8 +565,12 @@ usage(int error_code)
 		"  --connector=ID\tBring up only this connector\n"
 		"  --seat=SEAT\t\tThe seat that weston should run on\n"
 		"  --tty=TTY\t\tThe tty to use\n"
-		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
-		"  --use-g2d\t\tUse the g2d (GPU) renderer\n"
+#if defined(ENABLE_OPENGL)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+#else
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
+#endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
 #endif
 
@@ -1237,7 +1241,9 @@ load_drm_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#if defined(ENABLE_OPENGL)
 		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+#endif
 	};
 
 	parse_options(options, ARRAY_LENGTH(options), argc, argv);

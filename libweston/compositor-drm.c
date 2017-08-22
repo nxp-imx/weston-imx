@@ -51,7 +51,9 @@
 #include "compositor-drm.h"
 #include "shared/helpers.h"
 #include "shared/timespec-util.h"
+#if defined(ENABLE_OPENGL)
 #include "gl-renderer.h"
+#endif
 #include "g2d-renderer.h"
 #include "weston-egl-ext.h"
 #include "pixman-renderer.h"
@@ -212,7 +214,9 @@ struct drm_sprite {
 	uint32_t formats[];
 };
 
+#if defined(ENABLE_OPENGL)
 static struct gl_renderer_interface *gl_renderer;
+#endif
 static struct g2d_renderer_interface *g2d_renderer;
 
 static const char default_seat[] = "seat0";
@@ -674,8 +678,10 @@ drm_output_render(struct drm_output *output, pixman_region32_t *damage)
 		drm_output_render_pixman(output, damage);
 	else if (b->use_g2d)
 		drm_output_render_g2d(output, damage);
+#if defined(ENABLE_OPENGL)
 	else
 		drm_output_render_gl(output, damage);
+#endif
 
 	pixman_region32_subtract(&c->primary_plane.damage,
 				 &c->primary_plane.damage, damage);
@@ -1455,10 +1461,12 @@ choose_mode (struct drm_output *output, struct weston_mode *target_mode)
 	return tmp_mode;
 }
 
+#if defined(ENABLE_OPENGL)
 static int
 drm_output_init_egl(struct drm_output *output, struct drm_backend *b);
 static void
 drm_output_fini_egl(struct drm_output *output);
+#endif
 static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b);
 static void
@@ -1522,6 +1530,7 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
+#if defined(ENABLE_OPENGL)
 	} else {
 		drm_output_fini_egl(output);
 		if (drm_output_init_egl(output, b) < 0) {
@@ -1529,6 +1538,7 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode");
 			return -1;
 		}
+#endif
 	}
 
 	return 0;
@@ -1675,6 +1685,7 @@ drm_backend_create_gl_renderer(struct drm_backend *b)
 	return 0;
 }
 
+#if defined(ENABLE_OPENGL)
 static int
 init_egl(struct drm_backend *b)
 {
@@ -1690,6 +1701,7 @@ init_egl(struct drm_backend *b)
 
 	return 0;
 }
+#endif
 
 static int
 init_pixman(struct drm_backend *b)
@@ -1943,6 +1955,7 @@ find_crtc_for_connector(struct drm_backend *b,
 	return -1;
 }
 
+#if defined(ENABLE_OPENGL)
 /* Init output state that depends on gl or gbm */
 static int
 drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
@@ -1995,13 +2008,16 @@ drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
 
 	return 0;
 }
+#endif
 
+#if defined(ENABLE_OPENGL)
 static void
 drm_output_fini_egl(struct drm_output *output)
 {
 	gl_renderer->output_destroy(&output->base);
 	gbm_surface_destroy(output->gbm_surface);
 }
+#endif
 
 static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b)
@@ -2601,9 +2617,11 @@ drm_output_enable(struct weston_output *base)
 			weston_log("Failed to init output g2d state\n");
 			goto err_free;
 		}
+#if defined(ENABLE_OPENGL)
 	} else if (drm_output_init_egl(output, b) < 0) {
 		weston_log("Failed to init output gl state\n");
 		goto err_free;
+#endif
 	}
 
 	if (output->backlight) {
@@ -2669,8 +2687,10 @@ drm_output_deinit(struct weston_output *base)
 		drm_output_fini_pixman(output);
 	else if (b->use_g2d)
 		drm_output_fini_g2d(output);
+#if defined(ENABLE_OPENGL)
 	else
 		drm_output_fini_egl(output);
+#endif
 
 	weston_plane_release(&output->fb_plane);
 	weston_plane_release(&output->cursor_plane);
@@ -3291,6 +3311,7 @@ recorder_binding(struct weston_keyboard *keyboard, uint32_t time, uint32_t key,
 }
 #endif
 
+#if defined(ENABLE_OPENGL)
 static void
 switch_to_gl_renderer(struct drm_backend *b)
 {
@@ -3334,7 +3355,9 @@ switch_to_gl_renderer(struct drm_backend *b)
 				   "support failed.\n");
 	}
 }
+#endif
 
+#if defined(ENABLE_OPENGL)
 static void
 renderer_switch_binding(struct weston_keyboard *keyboard, uint32_t time,
 			uint32_t key, void *data)
@@ -3344,6 +3367,7 @@ renderer_switch_binding(struct weston_keyboard *keyboard, uint32_t time,
 
 	switch_to_gl_renderer(b);
 }
+#endif
 
 static const struct weston_drm_output_api api = {
 	drm_output_set_mode,
@@ -3429,11 +3453,13 @@ drm_backend_create(struct weston_compositor *compositor,
 			weston_log("failed to initialize g2d render\n");
 			goto err_udev_dev;
 		}
+#if defined(ENABLE_OPENGL)
 	} else {
 		if (init_egl(b) < 0) {
 			weston_log("failed to initialize egl\n");
 			goto err_udev_dev;
 		}
+#endif
 	}
 
 	b->base.destroy = drm_destroy;
@@ -3496,8 +3522,10 @@ drm_backend_create(struct weston_compositor *compositor,
 					    planes_binding, b);
 	weston_compositor_add_debug_binding(compositor, KEY_Q,
 					    recorder_binding, b);
+#if defined(ENABLE_OPENGL)
 	weston_compositor_add_debug_binding(compositor, KEY_W,
 					    renderer_switch_binding, b);
+#endif
 
 	if (compositor->renderer->import_dmabuf) {
 		if (linux_dmabuf_setup(compositor) < 0)
