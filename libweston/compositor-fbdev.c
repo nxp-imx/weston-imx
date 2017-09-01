@@ -103,6 +103,7 @@ struct fbdev_output {
 	/* pixman details. */
 	pixman_image_t *hw_surface;
 	uint8_t depth;
+	int fb_fd;
 #ifdef ENABLE_EGL
 	NativeDisplayType display;
 	NativeWindowType  window;
@@ -169,6 +170,8 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
 	struct fbdev_output *output = to_fbdev_output(base);
 	struct fbdev_backend *fbb = output->backend;
 	struct weston_compositor *ec = fbb->compositor;
+	unsigned int crtc = 0;
+	struct timespec ts;
 
 	if (fbb->use_pixman) {
 		fbdev_output_repaint_pixman(base,damage);
@@ -178,8 +181,9 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
 		pixman_region32_subtract(&ec->primary_plane.damage,
 	                         &ec->primary_plane.damage, damage);
 
-		wl_event_source_timer_update(output->finish_frame_timer,
-	                             1000000 / output->mode.refresh);
+		ioctl(output->fb_fd, FBIO_WAITFORVSYNC, &crtc);
+		weston_compositor_read_presentation_clock(base->compositor, &ts);
+		weston_output_finish_frame(base, &ts, 0);
 	}
 
 	return 0;
@@ -479,19 +483,8 @@ fbdev_output_enable(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
 	struct fbdev_backend *backend = to_fbdev_backend(base->compositor);
-	int fb_fd;
-	struct wl_event_loop *loop;
-	/* Create the frame buffer. */
-	fb_fd = fbdev_frame_buffer_open(output, output->device, &output->fb_info);
-	if (fb_fd < 0) {
-		weston_log("Creating frame buffer failed.\n");
-		return -1;
-	}
 
-	if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
-		weston_log("Mapping frame buffer failed.\n");
-		return -1;
-	}
+	struct wl_event_loop *loop;
 
 	output->base.start_repaint_loop = fbdev_output_start_repaint_loop;
 	output->base.repaint = fbdev_output_repaint;
@@ -572,10 +565,8 @@ fbdev_output_create(struct fbdev_backend *backend,
 			weston_log("Mapping frame buffer failed.\n");
 			goto out_free;
 		}
-	} else {
-		close(fb_fd);
 	}
-
+	output->fb_fd = fb_fd;
 	output->base.name = strdup("fbdev");
 	output->base.destroy = fbdev_output_destroy;
 	output->base.disable = NULL;
@@ -599,8 +590,6 @@ fbdev_output_create(struct fbdev_backend *backend,
 
 	output->base.mm_width = output->fb_info.width_mm;
 	output->base.mm_height = output->fb_info.height_mm;
-
-	close(fb_fd);
 
 	weston_compositor_add_pending_output(&output->base, backend->compositor);
 
@@ -634,7 +623,7 @@ fbdev_output_destroy(struct weston_output *base)
 		gl_renderer->output_destroy(base);
 #endif
 	}
-
+	close(output->fb_fd);
 	/* Remove the output. */
 	weston_output_destroy(&output->base);
 
