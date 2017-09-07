@@ -2083,7 +2083,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 	int h = output->base.current_mode->height;
 	uint32_t format = output->gbm_format;
 	enum g2d_format g2dFormat;
-	unsigned int i;
+	int i, flags;
 
 	switch (format) {
 		case GBM_FORMAT_XRGB8888:
@@ -2116,6 +2116,17 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 	if (g2d_renderer->drm_output_create(&output->base) < 0)
 		goto err;
 
+	flags = GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE;
+
+	for (i = 0; i < 2; i++) {
+		if (output->gbm_cursor_bo[i])
+			continue;
+
+		output->gbm_cursor_bo[i] =
+			gbm_bo_create(b->gbm, b->cursor_width, b->cursor_height,
+				GBM_FORMAT_ARGB8888, flags);
+	}
+
 	pixman_region32_init_rect(&output->previous_damage,
 				  output->base.x, output->base.y, output->base.width, output->base.height);
 
@@ -2138,14 +2149,13 @@ drm_output_fini_g2d(struct drm_output *output)
 {
 	unsigned int i;
 
-	pixman_renderer_output_destroy(&output->base);
 	pixman_region32_fini(&output->previous_damage);
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		drm_fb_destroy_dumb(output->dumb[i]);
 		output->dumb[i] = NULL;
 	}
-	g2d_renderer->output_destroy(output);
+	g2d_renderer->output_destroy(&output->base);
 }
 
 static void
