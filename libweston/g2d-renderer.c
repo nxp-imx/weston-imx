@@ -47,6 +47,8 @@
 #define BUFFER_DAMAGE_COUNT 2
 #define ALIGN_WIDTH(a) (((a) + 15) & ~15)
 
+static PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
+
 struct wl_viv_buffer
 {
     struct wl_resource *resource;
@@ -123,6 +125,8 @@ struct g2d_renderer {
 	NativeDisplayType display;
 	EGLDisplay egl_display;
 	struct wl_display *wl_display;
+	PFNEGLBINDWAYLANDDISPLAYWL bind_display;
+	PFNEGLUNBINDWAYLANDDISPLAYWL unbind_display;
 #endif
 	void *handle;
 	int use_drm;
@@ -409,7 +413,7 @@ copy_to_framebuffer(struct weston_output *output)
 {
 	struct g2d_renderer *gr = get_renderer(output->compositor);
 	struct g2d_output_state *go = get_output_state(output);
-    g2dRECT clipRect;
+    g2dRECT clipRect = {0};
 
     if((!go->directBlit && go->nNumBuffers == 1) || (go->clone_display_num))
     {
@@ -1056,7 +1060,8 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	wl_signal_emit(&gr->destroy_signal, gr);
 	g2d_close(gr->handle);
 #ifdef ENABLE_EGL
-	eglUnbindWaylandDisplayWL(gr->egl_display);
+	if(gr->bind_display)
+		gr->bind_display(gr->egl_display, gr->wl_display);
 	eglTerminate(gr->egl_display);
 	if(!gr->use_drm)
 		fbDestroyDisplay(gr->display);
@@ -1079,7 +1084,17 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.attach = g2d_renderer_attach;
 	gr->base.surface_set_color = g2d_renderer_surface_set_color;
 	gr->base.destroy = g2d_renderer_destroy;
-
+#ifdef ENABLE_EGL
+	gr->bind_display =
+		(void *) eglGetProcAddress("eglBindWaylandDisplayWL");
+	gr->unbind_display =
+		(void *) eglGetProcAddress("eglUnbindWaylandDisplayWL");
+	if (!get_platform_display)
+	{
+		get_platform_display = (void *) eglGetProcAddress(
+				"eglGetPlatformDisplayEXT");
+	}
+#endif
 	if(g2d_open(&gr->handle))
 	{
 		weston_log("g2d_open fail.\n");
@@ -1103,9 +1118,11 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 #ifdef ENABLE_EGL
 	gr = get_renderer(ec);
 	gr->wl_display = ec->wl_display;
-	gr->egl_display = eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_KHR,
+	if(get_platform_display)
+		gr->egl_display = get_platform_display(EGL_PLATFORM_GBM_KHR,
 				native_window, NULL);
-	eglBindWaylandDisplayWL(gr->egl_display, gr->wl_display);
+	if(gr->bind_display)
+		gr->bind_display(gr->egl_display, gr->wl_display);
 	gr->use_drm = 1;
 #endif
 	return 0;
@@ -1378,7 +1395,8 @@ g2d_renderer_output_create(struct weston_output *output, struct wl_display *wl_d
 	gr->wl_display = wl_display;
 	gr->display = fbGetDisplay(wl_display);
 	gr->egl_display = eglGetDisplay(gr->display);
-	eglBindWaylandDisplayWL(gr->egl_display, wl_display);
+	if(gr->bind_display)
+		gr->bind_display(gr->egl_display, wl_display);
 #endif
 	getBufferNumber(go);
 
