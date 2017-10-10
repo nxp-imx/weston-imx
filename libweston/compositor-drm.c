@@ -1631,6 +1631,7 @@ init_drm(struct drm_backend *b, struct udev_device *device)
 	return 0;
 }
 
+#if defined(ENABLE_OPENGL)
 static struct gbm_device *
 create_gbm_device(int fd)
 {
@@ -1701,7 +1702,6 @@ drm_backend_create_gl_renderer(struct drm_backend *b)
 	return 0;
 }
 
-#if defined(ENABLE_OPENGL)
 static int
 init_egl(struct drm_backend *b)
 {
@@ -2121,7 +2121,8 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 	int h = output->base.current_mode->height;
 	uint32_t format = output->gbm_format;
 	enum g2d_format g2dFormat;
-	int i, flags;
+	int flags;
+        uint32_t i = 0;
 
 	switch (format) {
 		case GBM_FORMAT_XRGB8888:
@@ -3585,7 +3586,7 @@ err_drm_source:
 	wl_event_source_remove(b->drm_source);
 err_udev_input:
 	udev_input_destroy(&b->input);
-err_sprite:
+
 	if (b->gbm)
 		gbm_device_destroy(b->gbm);
 	destroy_sprites(b);
