@@ -483,10 +483,11 @@ device_paused(struct launcher_logind *wl, DBusMessage *m)
 	 * "gone" means the device is gone. We handle it the same as "force" as
 	 * a following udev event will be caught, too.
 	 *
-	 * If it's our main DRM device, tell the compositor to go asleep. */
-
+	 * If it's our main DRM device and not "gone", tell the compositor to go asleep. */
 	if (!strcmp(type, "pause"))
 		launcher_logind_pause_device_complete(wl, major, minor);
+	else if (strcmp(type, "gone") == 0)
+		return;
 
 	if (wl->sync_drm && major == DRM_MAJOR)
 		launcher_logind_set_active(wl, false);
