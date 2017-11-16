@@ -2833,12 +2833,86 @@ create_output_for_connector(struct drm_backend *b,
 	return 0;
 }
 
+/**
+ * Create a drm_plane for a hardware plane
+ *
+ * Creates one drm_plane structure for a hardware plane, and initialises its
+ * properties and formats.
+ *
+ * This function does not add the plane to the list of usable planes in Weston
+ * itself; the caller is responsible for this.
+ *
+ * Call drm_plane_destroy to clean up the plane.
+ *
+ * @param ec Compositor to create plane for
+ * @param kplane DRM plane to create
+ */
+static struct drm_plane *
+drm_plane_create(struct drm_backend *b, const drmModePlane *kplane)
+{
+	struct drm_plane *plane;
+
+	plane = zalloc(sizeof(*plane) + ((sizeof(uint32_t)) *
+					  kplane->count_formats));
+	if (!plane) {
+		weston_log("%s: out of memory\n", __func__);
+		return NULL;
+	}
+
+	plane->possible_crtcs = kplane->possible_crtcs;
+	plane->plane_id = kplane->plane_id;
+	plane->current = NULL;
+	plane->next = NULL;
+	plane->output = NULL;
+	plane->backend = b;
+	plane->count_formats = kplane->count_formats;
+	memcpy(plane->formats, kplane->formats,
+	       kplane->count_formats * sizeof(kplane->formats[0]));
+
+	weston_plane_init(&plane->base, b->compositor, 0, 0);
+	wl_list_insert(&b->sprite_list, &plane->link);
+
+	return plane;
+}
+
+/**
+ * Destroy one DRM plane
+ *
+ * Destroy a DRM plane, removing it from screen and releasing its retained
+ * buffers in the process. The counterpart to drm_plane_create.
+ *
+ * @param plane Plane to deallocate (will be freed)
+ */
+static void
+drm_plane_destroy(struct drm_plane *plane)
+{
+	drmModeSetPlane(plane->backend->drm.fd,
+			plane->plane_id, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0);
+	if (plane->current)
+		drm_output_release_fb(plane->output, plane->current);
+	if (plane->next)
+		drm_output_release_fb(plane->output, plane->next);
+	weston_plane_release(&plane->base);
+	wl_list_remove(&plane->link);
+	free(plane);
+}
+
+/**
++ * Initialise sprites (overlay planes)
++ *
++ * Walk the list of provided DRM planes, and add overlay planes.
++ *
++ * Call destroy_sprites to free these planes.
++ *
++ * @param ec Compositor to create sprites for.
++ */
 static void
 create_sprites(struct drm_backend *b)
 {
-	struct drm_plane *plane;
 	drmModePlaneRes *kplane_res;
 	drmModePlane *kplane;
+	struct drm_plane *drm_plane;
 	uint32_t i;
 
 	kplane_res = drmModeGetPlaneResources(b->drm.fd);
@@ -2853,53 +2927,32 @@ create_sprites(struct drm_backend *b)
 		if (!kplane)
 			continue;
 
-		plane = zalloc(sizeof(*plane) + ((sizeof(uint32_t)) *
-						   kplane->count_formats));
-		if (!plane) {
-			weston_log("%s: out of memory\n",
-				__func__);
-			drmModeFreePlane(kplane);
-			continue;
-		}
-
-		plane->possible_crtcs = kplane->possible_crtcs;
-		plane->plane_id = kplane->plane_id;
-		plane->current = NULL;
-		plane->next = NULL;
-		plane->backend = b;
-		plane->count_formats = kplane->count_formats;
-		memcpy(plane->formats, kplane->formats,
-		       kplane->count_formats * sizeof(kplane->formats[0]));
+		drm_plane = drm_plane_create(b->compositor, kplane);
 		drmModeFreePlane(kplane);
-		weston_plane_init(&plane->base, b->compositor, 0, 0);
-		weston_compositor_stack_plane(b->compositor, &plane->base,
-					      &b->compositor->primary_plane);
+		if (!drm_plane)
+			continue;
 
-		wl_list_insert(&b->sprite_list, &plane->link);
+		weston_compositor_stack_plane(b->compositor, &drm_plane->base,
+					      &b->compositor->primary_plane);
 	}
 
 	drmModeFreePlaneResources(kplane_res);
 }
 
+/**
+ * Clean up sprites (overlay planes)
+ *
+ * The counterpart to create_sprites.
+ *
+ * @param compositor Compositor to deallocate sprites for.
+*/
 static void
 destroy_sprites(struct drm_backend *backend)
 {
 	struct drm_plane *plane, *next;
-	struct drm_output *output;
 
-	output = container_of(backend->compositor->output_list.next,
-			      struct drm_output, base.link);
-
-	wl_list_for_each_safe(plane, next, &backend->sprite_list, link) {
-		drmModeSetPlane(backend->drm.fd,
-				plane->plane_id,
-				output->crtc_id, 0, 0,
-				0, 0, 0, 0, 0, 0, 0, 0);
-		drm_output_release_fb(output, plane->current);
-		drm_output_release_fb(output, plane->next);
-		weston_plane_release(&plane->base);
-		free(plane);
-	}
+	wl_list_for_each_safe(plane, next, &backend->sprite_list, link)
+		drm_plane_destroy(plane);
 }
 
 static int
