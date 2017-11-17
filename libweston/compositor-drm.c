@@ -262,7 +262,7 @@ struct drm_output {
 
 	struct gbm_surface *gbm_surface;
 	struct gbm_bo *gbm_cursor_bo[2];
-	struct weston_plane cursor_plane;
+	struct drm_plane *cursor_plane;
 	struct weston_plane fb_plane;
 	struct weston_view *cursor_view;
 	int current_cursor;
@@ -868,7 +868,8 @@ drm_output_repaint(struct weston_output *output_base,
 
 	output->page_flip_pending = 1;
 
-	drm_output_set_cursor(output);
+	if (output->cursor_plane)
+		drm_output_set_cursor(output);
 
 	/*
 	 * Now, update all the sprite surfaces
@@ -1329,6 +1330,9 @@ drm_output_prepare_cursor_view(struct drm_output *output,
 	if (wl_shm_buffer_get_format(shmbuf) != WL_SHM_FORMAT_ARGB8888)
 		return NULL;
 
+	if (output->cursor_plane == NULL)
+		return NULL;
+
 	if (output->base.transform != WL_OUTPUT_TRANSFORM_NORMAL)
 		return NULL;
 	if (ev->transform.enabled &&
@@ -1345,7 +1349,7 @@ drm_output_prepare_cursor_view(struct drm_output *output,
 
 	output->cursor_view = ev;
 
-	return &output->cursor_plane;
+	return &output->cursor_plane->base;
 }
 
 /**
@@ -1712,20 +1716,22 @@ drm_output_set_cursor(struct drm_output *output)
 	struct gbm_bo *bo;
 	float x, y;
 
+	assert(output->cursor_plane);
+
 	output->cursor_view = NULL;
 	if (ev == NULL) {
 		drmModeSetCursor(b->drm.fd, output->crtc_id, 0, 0, 0);
-		output->cursor_plane.x = INT32_MIN;
-		output->cursor_plane.y = INT32_MIN;
+		output->cursor_plane->base.x = INT32_MIN;
+		output->cursor_plane->base.y = INT32_MIN;
 		return;
 	}
 
 	buffer = ev->surface->buffer_ref.buffer;
 
 	if (buffer &&
-	    pixman_region32_not_empty(&output->cursor_plane.damage)) {
-		pixman_region32_fini(&output->cursor_plane.damage);
-		pixman_region32_init(&output->cursor_plane.damage);
+	    pixman_region32_not_empty(&output->cursor_plane->base.damage)) {
+		pixman_region32_fini(&output->cursor_plane->base.damage);
+		pixman_region32_init(&output->cursor_plane->base.damage);
 		output->current_cursor ^= 1;
 		bo = output->gbm_cursor_bo[output->current_cursor];
 
@@ -1746,14 +1752,15 @@ drm_output_set_cursor(struct drm_output *output)
 	x = (x - output->base.x) * output->base.current_scale;
 	y = (y - output->base.y) * output->base.current_scale;
 
-	if (output->cursor_plane.x != x || output->cursor_plane.y != y) {
+	if (output->cursor_plane->base.x != x ||
+	    output->cursor_plane->base.y != y) {
 		if (drmModeMoveCursor(b->drm.fd, output->crtc_id, x, y)) {
 			weston_log("failed to move cursor: %m\n");
 			b->cursors_are_broken = 1;
 		}
 
-		output->cursor_plane.x = x;
-		output->cursor_plane.y = y;
+		output->cursor_plane->base.x = x;
+		output->cursor_plane->base.y = y;
 	}
 }
 
@@ -1825,7 +1832,8 @@ drm_assign_planes(struct weston_output *output_base)
 					      &ev->transform.boundingbox);
 
 		if (next_plane == primary ||
-		    next_plane == &output->cursor_plane) {
+		    (output->cursor_plane &&
+		    next_plane == &output->cursor_plane->base)) {
 			/* cursor plane involves a copy */
 			ev->psf_flags = 0;
 		} else {
@@ -3011,6 +3019,57 @@ drm_output_set_seat(struct weston_output *base,
 				     seat ? seat : "");
 }
 
+static void
+drm_output_init_cursor(struct drm_output *output)
+{
+	struct drm_backend *b = to_drm_backend(output->base.compositor);
+	struct drm_plane *plane;
+
+	if (b->universal_planes) {
+		wl_list_for_each(plane, &b->plane_list, link) {
+			if (plane->type != WDRM_PLANE_TYPE_CURSOR)
+				continue;
+			if (plane->output)
+				continue;
+			if (!drm_plane_crtc_supported(output, plane))
+				continue;
+
+			plane->output = output;
+			output->cursor_plane = plane;
+			break;
+		}
+	}
+	else {
+		/* XXX: Gross open-coding ... ? */
+		plane = zalloc(sizeof(*plane) + sizeof(uint32_t));
+		if (!plane) {
+			weston_log("%s: out of memory\n", __func__);
+			return;
+		}
+
+		weston_plane_init(&plane->base, b->compositor, 0, 0);
+		wl_list_insert(&b->plane_list, &plane->link);
+
+		plane->plane_id = 0;
+		plane->possible_crtcs = 0;
+		plane->output = output;
+		plane->current = NULL;
+		plane->next = NULL;
+		plane->backend = b;
+		plane->count_formats = 1;
+		plane->formats[0] = GBM_FORMAT_ARGB8888;
+		plane->type = WDRM_PLANE_TYPE_CURSOR;
+
+		output->cursor_plane = plane;
+	}
+
+	if (!output->cursor_plane)
+		return;
+
+	weston_compositor_stack_plane(b->compositor, &output->cursor_plane->base,
+				      NULL);
+}
+
 static int
 drm_output_enable(struct weston_output *base)
 {
@@ -3019,6 +3078,8 @@ drm_output_enable(struct weston_output *base)
 	struct weston_mode *m;
 
 	output->dpms_prop = drm_get_prop(b->drm.fd, output->connector, "DPMS");
+
+	drm_output_init_cursor(output);
 
 	if (b->use_pixman) {
 		if (drm_output_init_pixman(output, b) < 0) {
@@ -3064,11 +3125,6 @@ drm_output_enable(struct weston_output *base)
 	    output->connector->connector_type == DRM_MODE_CONNECTOR_eDP)
 		output->base.connection_internal = 1;
 
-	weston_plane_init(&output->cursor_plane, b->compositor,
-			  INT32_MIN, INT32_MIN);
-	weston_plane_init(&output->fb_plane, b->compositor, 0, 0);
-
-	weston_compositor_stack_plane(b->compositor, &output->cursor_plane, NULL);
 	weston_compositor_stack_plane(b->compositor, &output->fb_plane,
 				      &b->compositor->primary_plane);
 
@@ -3110,7 +3166,6 @@ drm_output_deinit(struct weston_output *base)
 #endif
 
 	weston_plane_release(&output->fb_plane);
-	weston_plane_release(&output->cursor_plane);
 
 	drmModeFreeProperty(output->dpms_prop);
 
@@ -3335,7 +3390,7 @@ create_sprites(struct drm_backend *b)
 		if (!kplane)
 			continue;
 
-		drm_plane = drm_plane_create(b->compositor, kplane);
+		drm_plane = drm_plane_create(b, kplane);
 		drmModeFreePlane(kplane);
 		if (!drm_plane)
 			continue;
@@ -3593,7 +3648,9 @@ session_notify(struct wl_listener *listener, void *data)
 
 		wl_list_for_each(output, &compositor->output_list, base.link) {
 			output->base.repaint_needed = 0;
-			drmModeSetCursor(b->drm.fd, output->crtc_id, 0, 0, 0);
+			if (output->cursor_plane)
+				drmModeSetCursor(b->drm.fd, output->crtc_id,
+						 0, 0, 0);
 		}
 
 		output = container_of(compositor->output_list.next,
