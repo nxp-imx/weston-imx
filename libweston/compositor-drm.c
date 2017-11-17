@@ -884,6 +884,9 @@ drm_output_repaint(struct weston_output *output_base,
 		if (s->type != WDRM_PLANE_TYPE_OVERLAY)
 			continue;
 
+		if (s->output != output)
+			continue;
+
 		if ((!s->current && !s->next) ||
 		    !drm_plane_crtc_supported(output, s))
 			continue;
