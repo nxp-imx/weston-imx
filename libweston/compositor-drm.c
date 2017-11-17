@@ -262,6 +262,7 @@ struct drm_output {
 
 	struct gbm_surface *gbm_surface;
 	struct gbm_bo *gbm_cursor_bo[2];
+	struct drm_fb *cursor_fb[2];
 	struct drm_plane *cursor_plane;
 	struct weston_plane fb_plane;
 	struct weston_view *cursor_view;
@@ -583,11 +584,15 @@ drm_output_release_fb(struct drm_output *output, struct drm_fb *fb)
 	if (!fb)
 		return;
 
+	/* XXX: These static checks to output->dumb and output->cursor_fb
+	*      are really unpleasant; we should revisit this with an explicit
+	*      type attribute. */
 	if (fb->map &&
             (fb != output->dumb[0] && fb != output->dumb[1])) {
 		drm_fb_destroy_dumb(fb);
 	} else if (fb->bo) {
-		if (fb->is_client_buffer)
+		if (fb->is_client_buffer ||
+		    (fb == output->cursor_fb[0] || fb == output->cursor_fb[1]))
 			gbm_bo_destroy(fb->bo);
 		else
 			gbm_surface_release_buffer(output->gbm_surface,
@@ -1735,8 +1740,14 @@ drm_output_set_cursor(struct drm_output *output)
 	    pixman_region32_not_empty(&output->cursor_plane->base.damage)) {
 		pixman_region32_fini(&output->cursor_plane->base.damage);
 		pixman_region32_init(&output->cursor_plane->base.damage);
+		assert(output->cursor_plane->current ==
+		output->cursor_fb[output->current_cursor]);
+		output->cursor_plane->next =
+			output->cursor_fb[output->current_cursor];
 		output->current_cursor ^= 1;
 		bo = output->gbm_cursor_bo[output->current_cursor];
+		output->cursor_plane->current =
+			output->cursor_fb[output->current_cursor];
 
 		cursor_bo_update(b, bo, ev);
 		handle = gbm_bo_get_handle(bo).s32;
@@ -2409,6 +2420,10 @@ drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
 		return -1;
 	}
 
+	/* No point creating cursors if we don't have a plane for them. */
+	if (!output->cursor_plane)
+		return 0;
+
 	flags = GBM_BO_USE_CURSOR | GBM_BO_USE_WRITE;
 
 	for (i = 0; i < 2; i++) {
@@ -2418,9 +2433,18 @@ drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
 		output->gbm_cursor_bo[i] =
 			gbm_bo_create(b->gbm, b->cursor_width, b->cursor_height,
 				GBM_FORMAT_ARGB8888, flags);
+		if (!output->gbm_cursor_bo[i])
+			break;
+
+		output->cursor_fb[i] =
+			drm_fb_get_from_bo(output->gbm_cursor_bo[i], b,
+					   GBM_FORMAT_ARGB8888);
+		if (!output->cursor_fb[i])
+			break;
 	}
 
-	if (output->gbm_cursor_bo[0] == NULL || output->gbm_cursor_bo[1] == NULL) {
+	if (output->gbm_cursor_bo[0] == NULL || output->gbm_cursor_bo[1] == NULL ||
+		output->cursor_fb[0] == NULL || output->cursor_fb[1] == NULL) {
 		weston_log("cursor buffers unavailable, using gl cursors\n");
 		b->cursors_are_broken = 1;
 	}
