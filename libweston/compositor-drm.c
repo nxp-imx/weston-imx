@@ -67,8 +67,16 @@
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 
+#ifndef static_assert
+#define static_assert(cond, msg) assert((cond) && msg)
+#endif
+
 #ifndef DRM_CAP_TIMESTAMP_MONOTONIC
 #define DRM_CAP_TIMESTAMP_MONOTONIC 0x6
+#endif
+
+#ifndef DRM_CLIENT_CAP_UNIVERSAL_PLANES
+#define DRM_CLIENT_CAP_UNIVERSAL_PLANES 2
 #endif
 
 #ifndef DRM_CAP_CURSOR_WIDTH
@@ -82,6 +90,42 @@
 #ifndef GBM_BO_USE_CURSOR
 #define GBM_BO_USE_CURSOR GBM_BO_USE_CURSOR_64X64
 #endif
+
+/**
+ * List of properties attached to DRM planes
+ */
+enum wdrm_plane_property {
+	WDRM_PLANE_TYPE = 0,
+	WDRM_PLANE__COUNT
+};
+
+/**
+ * Possible values for the WDRM_PLANE_TYPE property.
+ */
+enum wdrm_plane_type {
+	WDRM_PLANE_TYPE_PRIMARY = 0,
+	WDRM_PLANE_TYPE_CURSOR,
+	WDRM_PLANE_TYPE_OVERLAY,
+	WDRM_PLANE_TYPE__COUNT
+};
+
+/**
+ * One property attached to a DRM mode object (plane, CRTC, connector).
+ */
+struct property_item {
+	drmModePropertyRes *drm_prop;
+	uint32_t id;
+	uint64_t value;
+};
+
+/**
+ * Holding structure for plane properties.
+ */
+struct plane_properties {
+	struct property_item item[WDRM_PLANE__COUNT];
+	uint64_t typemap[WDRM_PLANE_TYPE__COUNT]; /**< map for type enum */
+	uint32_t value_valid_mask;
+};
 
 struct drm_backend {
 	struct weston_backend base;
@@ -115,6 +159,8 @@ struct drm_backend {
 	int sprites_hidden;
 
 	int cursors_are_broken;
+
+	bool universal_planes;
 
 	int use_pixman;
 #if defined(ENABLE_IMXG2D)
@@ -175,9 +221,13 @@ struct drm_plane {
 
 	struct weston_plane base;
 
+	enum wdrm_plane_type type;
+
 	struct drm_fb *current, *next;
 	struct drm_output *output;
 	struct drm_backend *backend;
+
+	struct plane_properties props;
 
 	uint32_t possible_crtcs;
 	uint32_t plane_id;
@@ -239,6 +289,25 @@ static struct g2d_renderer_interface *g2d_renderer;
 #endif
 
 static const char default_seat[] = "seat0";
+
+/**
+ * Return a string describing the type of a DRM object
+ */
+static const char *
+drm_object_type_str(uint32_t obj_type)
+{
+	switch (obj_type) {
+	case DRM_MODE_OBJECT_CRTC:      return "crtc";
+	case DRM_MODE_OBJECT_CONNECTOR: return "connector";
+	case DRM_MODE_OBJECT_ENCODER:   return "encoder";
+	case DRM_MODE_OBJECT_MODE:      return "mode";
+	case DRM_MODE_OBJECT_PROPERTY:  return "property";
+	case DRM_MODE_OBJECT_FB:        return "fb";
+	case DRM_MODE_OBJECT_BLOB:      return "blob";
+	case DRM_MODE_OBJECT_PLANE:     return "plane";
+	default: return "???";
+	}
+}
 
 static inline struct drm_output *
 to_drm_output(struct weston_output *base)
@@ -1310,6 +1379,323 @@ cursor_bo_update(struct drm_backend *b, struct gbm_bo *bo,
 		weston_log("failed update cursor: %m\n");
 }
 
+/**
+ * Cache a mapping from static values to a DRM property enum
+ *
+ * DRM property enum values are dynamic at runtime; the user must query the
+ * property to find out the desired runtime value for a requested string
+ * name. Using  the 'type' field on planes as an example, there is no single
+ * hardcoded constant for primary plane types; instead, the property must be
+ * queried at runtime to find the value associated with the string "Primary".
+ *
+ * This helper queries and caches the enum values, to allow us to use a set
+ * of compile-time-constant enums portably across various implementations.
+ * The values given in enum_names are searched for, and stored in the
+ * same-indexed field of the map array.
+ *
+ * For example, if the DRM driver exposes 'Foo' as value 7 and 'Bar' as value
+ * 19, passing in enum_names containing 'Foo' and 'Bar' in that order, will
+ * populate map with 7 and 19, in that order.
+ *
+ * This should always be used with static C enums to represent each value, e.g.
+ * WDRM_PLANE_MISC_FOO, WDRM_PLANE_MISC_BAR.
+ *
+ * Property lookup is not mandatory and may fail; users should carefully
+ * check the return value, which is a bitmask populated with the indices
+ * of properties which were successfully looked up. Values not successfully
+ * looked up may return 0, which may represent a false positive.
+ *
+ * @param prop DRM enum property to cache map for
+ * @param map Array for enum values; each entry is written for the corresponding
+ *            entry in enum_names
+ * @param enum_names List of string values to look up enum values for
+ * @param nenums Length of enum_names and map arrays
+ *
+ * @returns Bitmask of populated entries in map
+ */
+static uint32_t
+drm_property_get_enum_map(const struct property_item *item, uint64_t *map,
+			  const char * const *enum_names, int nenums)
+{
+	drmModePropertyRes *prop = item->drm_prop;
+	uint32_t valid_mask = 0;
+	int seen = 0;
+	int i, j;
+
+	assert(nenums <= 32 && "update return type");
+	memset(map, 0, nenums * sizeof *map);
+
+	if (!prop) {
+		weston_log("DRM warning: attempting to init property enum, "
+			   "that was not found. (e.g. '%s')\n",
+			   enum_names[0]);
+		return 0;
+	}
+
+	if (!(prop->flags & DRM_MODE_PROP_ENUM) || prop->count_enums < 1) {
+		weston_log("DRM error: property %d '%s' is not an enum.\n",
+			   prop->prop_id, prop->name);
+		return 0;
+	}
+
+	for (i = 0; i < prop->count_enums; i++) {
+		struct drm_mode_property_enum *en = &prop->enums[i];
+
+		for (j = 0; j < nenums; j++) {
+			if (!strcmp(en->name, enum_names[j]))
+				break;
+		}
+
+		if (j == nenums) {
+			weston_log("DRM debug: property %d '%s' "
+				   "has unrecognized enum %#" PRIx64 " '%s'\n",
+				   prop->prop_id, prop->name,
+				   (uint64_t)en->value, en->name);
+			break;
+		}
+
+		map[j] = en->value;
+		valid_mask |= (1U << j);
+		seen++;
+	}
+
+	if (seen != nenums)
+		weston_log("DRM debug: property %d '%s' has %u of %u "
+			   "expected enum values.\n",
+			   prop->prop_id, prop->name, seen, nenums);
+
+	return valid_mask;
+}
+
+/**
+ * Cache DRM property values
+ *
+ * Given a particular DRM object, find specified properties by name, and
+ * cache their internal property_item representation. Taking a list of
+ * names in prop_names, each corresponding entry in prop_items (matching
+ * index) will be populated with the corresponding DRM property.
+ *
+ * All users of DRM object properties in this file should use this
+ * mechanism.
+ *
+ * Property lookup is not mandatory and may fail; users should carefully
+ * check the return value, which is a bitmask populated with the indices
+ * of properties which were successfully looked up.
+ *
+ * @param ec Internal DRM compositor structure
+ * @param prop_items Array of internal property representations
+ * @param prop_names Array of property names to look up
+ * @param nprops Length of prop_items and prop_names arrays
+ * @param obj_id DRM object ID
+ * @param obj_type DRM object type (DRM_MODE_OBJECT_*)
+ *
+ * @returns Bitmask of populated entries in prop_items
+ */
+static uint32_t
+drm_properties_get_from_obj(struct drm_backend *b,
+			    struct property_item *prop_items,
+			    const char * const *prop_names,
+			    unsigned nprops,
+			    uint32_t obj_id, uint32_t obj_type)
+{
+	drmModeObjectProperties *props;
+	drmModePropertyRes *prop;
+	uint32_t valid_mask = 0;
+	unsigned i, j;
+
+	assert(nprops <= 32 && "update return type");
+
+	memset(prop_items, 0, nprops * sizeof *prop_items);
+
+	props = drmModeObjectGetProperties(b->drm.fd, obj_id, obj_type);
+	if (!props) {
+		weston_log("DRM error : get properties for object %u "
+			   "of type %#x '%s' failed.\n", obj_id, obj_type,
+			   drm_object_type_str(obj_type));
+		return valid_mask;
+	}
+
+	for (i = 0; i < props->count_props; i++) {
+		prop = drmModeGetProperty(b->drm.fd, props->props[i]);
+		if (!prop)
+			continue;
+
+		for (j = 0; j < nprops; j++) {
+			if (strcmp(prop->name, prop_names[j]) == 0)
+				break;
+		}
+
+		if (j == nprops) {
+			weston_log("DRM debug: unrecognized property %u '%s' on"
+				   " object %u of type %#x '%s'\n",
+				   prop->prop_id, prop->name,
+				   obj_id, obj_type,
+				   drm_object_type_str(obj_type));
+			drmModeFreeProperty(prop);
+			continue;
+		}
+
+		assert(prop_items[j].drm_prop == NULL);
+		prop_items[j].drm_prop = prop;
+		prop_items[j].id = prop->prop_id;
+		prop_items[j].value = props->prop_values[i];
+		valid_mask |= 1U << j;
+	}
+
+	for (i = 0; i < nprops; i++) {
+		if (prop_items[i].drm_prop == NULL)
+			weston_log("DRM warning: property '%s' missing from obj"
+				   " %u of type %#x '%s'\n", prop_names[i],
+				   obj_id, obj_type,
+				   drm_object_type_str(obj_type));
+	}
+
+	drmModeFreeObjectProperties(props);
+
+	return valid_mask;
+}
+
+/**
+ * Frees an array of property_items
+ *
+ * @param items Array to free
+ * @param len Number of items in array
+ */
+static void
+property_item_array_release(struct property_item *items, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++) {
+		if (items[i].drm_prop)
+			drmModeFreeProperty(items[i].drm_prop);
+	}
+}
+
+/**
+ * Get one property from a DRM plane
+ *
+ * Retrieve the cached value of a property on a DRM plane. The property passed
+ * must be valid for the plane, i.e. must have been in the return value of
+ * drm_properties_get_from_obj.
+ *
+ * @param plane Plane to retrieve property for
+ * @param prop Property to retrieve
+ */
+static uint64_t
+drm_plane_property_get(struct drm_plane *plane, enum wdrm_plane_property prop)
+{
+	assert(plane->props.value_valid_mask & (1U << prop));
+	return plane->props.item[prop].value;
+}
+
+/**
+ * Initialise DRM properties for planes
+ *
+ * Set up the holding structures to track DRM object properties set on planes.
+ * Free the memory allocated here with plane_properties_release.
+ *
+ * @param plane Plane to configure
+ */
+static bool
+plane_properties_init(struct drm_plane *plane)
+{
+	static const char * const plane_property_names[] = {
+		[WDRM_PLANE_TYPE] = "type",
+	};
+	static const char * const plane_type_names[] = {
+		[WDRM_PLANE_TYPE_PRIMARY] = "Primary",
+		[WDRM_PLANE_TYPE_OVERLAY] = "Overlay",
+		[WDRM_PLANE_TYPE_CURSOR] = "Cursor",
+	};
+	uint32_t type_mask;
+	uint32_t required_mask;
+
+	static_assert(ARRAY_LENGTH(plane_property_names) == WDRM_PLANE__COUNT,
+		      "plane_property_names mismatch with the enum");
+	static_assert(ARRAY_LENGTH(plane_type_names) == WDRM_PLANE_TYPE__COUNT,
+		      "plane_type_names mismatch with the enum");
+	static_assert(WDRM_PLANE__COUNT <= 32,
+		      "need more bits for plane item_valid_mask");
+
+	plane->props.value_valid_mask =
+		drm_properties_get_from_obj(plane->backend,
+					    plane->props.item,
+					    plane_property_names,
+					    WDRM_PLANE__COUNT,
+					    plane->plane_id,
+					    DRM_MODE_OBJECT_PLANE);
+
+	required_mask = 0;
+	if (plane->backend->universal_planes)
+		required_mask |= 1 << WDRM_PLANE_TYPE;
+
+	if (plane->props.value_valid_mask != required_mask) {
+		weston_log("DRM error: failed to look up all plane properties "
+			   "(wanted 0x%x got 0x%x) on ID %d\n",
+			   required_mask, plane->props.value_valid_mask,
+			   plane->plane_id);
+		return false;
+	}
+
+	/* Only the universal-plane enum below here. */
+	if (!plane->backend->universal_planes)
+		return true;
+
+	type_mask =
+		drm_property_get_enum_map(&plane->props.item[WDRM_PLANE_TYPE],
+					  plane->props.typemap,
+					  plane_type_names,
+					  WDRM_PLANE_TYPE__COUNT);
+
+	required_mask = 1 << WDRM_PLANE_TYPE_PRIMARY;
+	required_mask |= 1 << WDRM_PLANE_TYPE_CURSOR;
+	required_mask |= 1 << WDRM_PLANE_TYPE_OVERLAY;
+	if (type_mask != required_mask) {
+		weston_log("DRM error: failed to look up all plane type "
+		           "enum members (wanted 0x%x got 0x%x) on ID %d\n",
+			   required_mask, type_mask, plane->plane_id);
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Free DRM plane properties
+ *
+ * The counterpart to plane_properties_init.
+ *
+ * @param plane Plane to release properties for
+ */
+static void plane_properties_release(struct drm_plane *plane)
+{
+	property_item_array_release(plane->props.item, WDRM_PLANE__COUNT);
+	plane->props.value_valid_mask = 0;
+}
+
+/**
+ * Get type for a DRM plane
+ *
+ * Given a drm_plane object, find its type as an internal enum.
+ *
+ * @param plane Plane to find type for
+ * @returns Internal enum for plane type, or OVERLAY if unknown
+ */
+static enum wdrm_plane_type
+drm_plane_get_type(struct drm_plane *plane)
+{
+	uint64_t drm_type = drm_plane_property_get(plane, WDRM_PLANE_TYPE);
+	int i;
+
+	for (i = 0; i < WDRM_PLANE_TYPE__COUNT; i++) {
+		if (plane->props.typemap[i] == drm_type)
+			return i;
+	}
+
+	return WDRM_PLANE_TYPE_OVERLAY;
+}
+
 static void
 drm_output_set_cursor(struct drm_output *output)
 {
@@ -1617,6 +2003,11 @@ init_kms_caps(struct drm_backend *b)
 		b->cursor_height = cap;
 	else
 		b->cursor_height = 64;
+
+	ret = drmSetClientCap(b->drm.fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
+	b->universal_planes = (ret == 0);
+	weston_log("DRM: %s universal planes\n",
+		b->universal_planes ? "supports" : "does not support");
 
 	return 0;
 }
@@ -2869,6 +3260,16 @@ drm_plane_create(struct drm_backend *b, const drmModePlane *kplane)
 	memcpy(plane->formats, kplane->formats,
 	       kplane->count_formats * sizeof(kplane->formats[0]));
 
+	if (!plane_properties_init(plane)) {
+		free(plane);
+		return NULL;
+	}
+
+	if (b->universal_planes)
+		plane->type = drm_plane_get_type(plane);
+	else
+		plane->type = WDRM_PLANE_TYPE_OVERLAY;
+
 	weston_plane_init(&plane->base, b->compositor, 0, 0);
 	wl_list_insert(&b->sprite_list, &plane->link);
 
@@ -2895,6 +3296,7 @@ drm_plane_destroy(struct drm_plane *plane)
 		drm_output_release_fb(plane->output, plane->next);
 	weston_plane_release(&plane->base);
 	wl_list_remove(&plane->link);
+	plane_properties_release(plane);
 	free(plane);
 }
 
@@ -2931,6 +3333,12 @@ create_sprites(struct drm_backend *b)
 		drmModeFreePlane(kplane);
 		if (!drm_plane)
 			continue;
+
+		/* Ignore non-overlay planes for now. */
+		if (drm_plane->type != WDRM_PLANE_TYPE_OVERLAY) {
+			drm_plane_destroy(drm_plane);
+			continue;
+		}
 
 		weston_compositor_stack_plane(b->compositor, &drm_plane->base,
 					      &b->compositor->primary_plane);
