@@ -1124,6 +1124,21 @@ drm_output_populate_atomic_modeset(struct drm_output *output,
 		output->primary_plane->src_h = mode->base.height << 16;
 		output->primary_plane->dest_w = mode->base.width;
 		output->primary_plane->dest_h = mode->base.height;
+
+		char *p;
+		p = getenv("DESKTOP_SHELL_WINDOW");
+		if (p) {
+			int32_t width, height;
+			int n;
+
+			n = sscanf(p, "%dx%d", &width, &height);
+			if (n == 2) {
+				if (output->primary_plane->src_w > (width << 16))
+					output->primary_plane->src_w = width << 16;
+				if (output->primary_plane->src_h > (height << 16))
+					output->primary_plane->src_h = height << 16;
+			}
+		}
 	}
 	else {
 		output->primary_plane->src_w = 0;
@@ -2729,13 +2744,18 @@ init_kms_caps(struct drm_backend *b)
 	else
 		b->cursor_height = 64;
 
+	char *p;
+	p = getenv("DRM_UNIVERSAL_PLANES");
+
 	ret = drmSetClientCap(b->drm.fd, DRM_CLIENT_CAP_UNIVERSAL_PLANES, 1);
-	b->universal_planes = (ret == 0);
+	b->universal_planes = (ret == 0) & (p && p[0] != '0');
 	weston_log("DRM: %s universal planes\n",
 		b->universal_planes ? "supports" : "does not support");
 
+	p = getenv("DRM_ATOMIC_MODESET");
+
 	ret = drmSetClientCap(b->drm.fd, DRM_CLIENT_CAP_ATOMIC, 1);
-	b->atomic_modeset = (ret == 0);
+	b->atomic_modeset = (ret == 0) & (p && p[0] != '0');
 	weston_log("DRM: %susing atomic modesetting\n",
 		   b->atomic_modeset ? "" : "not ");
 
