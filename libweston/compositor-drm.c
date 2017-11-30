@@ -113,6 +113,9 @@ struct drm_backend {
 	int cursors_are_broken;
 
 	int use_pixman;
+#if defined(ENABLE_IMXG2D)
+	int use_g2d;
+#endif
 
 	struct udev_input input;
 

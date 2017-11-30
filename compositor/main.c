@@ -565,7 +565,14 @@ usage(int error_code)
 		"  --connector=ID\tBring up only this connector\n"
 		"  --seat=SEAT\t\tThe seat that weston should run on\n"
 		"  --tty=TTY\t\tThe tty to use\n"
-		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
+#if defined(ENABLE_OPENGL)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
+#elif defined(ENABLE_IMXG2D)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+#endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
 #endif
 
@@ -574,6 +581,19 @@ usage(int error_code)
 		"Options for fbdev-backend.so:\n\n"
 		"  --tty=TTY\t\tThe tty to use\n"
 		"  --device=DEVICE\tThe framebuffer device to use\n"
+#if defined(ENABLE_OPENGL)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
+#elif defined(ENABLE_IMXG2D)
+		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+#endif
+#if defined(ENABLE_IMXG2D)
+		"  --device=DEVICE[,DEVICE]...\n"
+		"  \t\t\tG2D-only: The framebuffer device(s) to use\n"
+		"  --clone-mode\t\tG2D-only: Duplicate the display on the specified devices\n"
+#endif
 		"\n");
 #endif
 
@@ -1226,11 +1246,22 @@ load_drm_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
+#if defined(ENABLE_OPENGL) || defined(ENABLE_IMXG2D)
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+#endif
 	};
 
 	parse_options(options, ARRAY_LENGTH(options), argc, argv);
-
+#if !defined(ENABLE_OPENGL)
+#if defined(ENABLE_IMXG2D)
+	config.use_g2d = 1;
+#else
+	config.use_pixman = 1;
+#endif
+#endif
 	section = weston_config_get_section(wc, "core", NULL, NULL);
 	weston_config_section_get_string(section,
 					 "gbm-format", &config.gbm_format,
@@ -1445,13 +1476,29 @@ load_fbdev_backend(struct weston_compositor *c,
 
 	const struct weston_option fbdev_options[] = {
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
-		{ WESTON_OPTION_STRING, "device", 0, &config.device },
+		{ WESTON_OPTION_STRING,  "device", 0, &config.device },
+#if defined(ENABLE_OPENGL) || defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+#endif
+#if defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_BOOLEAN, "clone-mode", 0, &config.clone_mode },
+#endif
 	};
 
 	parse_options(fbdev_options, ARRAY_LENGTH(fbdev_options), argc, argv);
 
 	if (!config.device)
 		config.device = strdup("/dev/fb0");
+#if !defined(ENABLE_OPENGL)
+#if defined(ENABLE_IMXG2D)
+	config.use_g2d = 1;
+#else
+	config.use_pixman = 1;
+#endif
+#endif
 
 	config.base.struct_version = WESTON_FBDEV_BACKEND_CONFIG_VERSION;
 	config.base.struct_size = sizeof(struct weston_fbdev_backend_config);

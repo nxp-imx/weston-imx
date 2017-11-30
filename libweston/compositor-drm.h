@@ -110,6 +110,11 @@ struct weston_drm_backend_config {
 	/** Whether to use the pixman renderer instead of the OpenGL ES renderer. */
 	bool use_pixman;
 
+#if defined(ENABLE_IMXG2D)
+	/** Whether to use the g2d renderer instead of the OpenGL ES renderer. */
+	bool use_g2d;
+#endif
+
 	/** The seat to be used for input and output.
 	 *
 	 * If NULL the default "seat0" will be used.  The backend will
