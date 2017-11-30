@@ -141,6 +141,7 @@ if test x$enable_egl = xyes; then
 	AC_DEFINE([ENABLE_EGL], [1], [Build Weston with EGL support])
 	PKG_CHECK_MODULES(EGL, [egl glesv2])
         PKG_CHECK_MODULES([EGL_TESTS], [egl glesv2 wayland-client wayland-egl])
+	COMPOSITOR_MODULES="$COMPOSITOR_MODULES egl"
 fi
 
 AC_ARG_ENABLE(opengl, [  --disable-opengl],,

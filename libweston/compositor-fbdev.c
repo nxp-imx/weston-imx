@@ -186,10 +186,8 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage)
 		/* Update the damage region. */
 		pixman_region32_subtract(&ec->primary_plane.damage,
 	                         &ec->primary_plane.damage, damage);
-
-		ioctl(output->fb_fd, FBIO_WAITFORVSYNC, &crtc);
-		weston_compositor_read_presentation_clock(base->compositor, &ts);
-		weston_output_finish_frame(base, &ts, 0);
+		wl_event_source_timer_update(output->finish_frame_timer,
+                                     1000000 / output->mode.refresh);
 	}
 
 	return 0;
@@ -578,7 +576,7 @@ fbdev_output_create(struct fbdev_backend *backend,
 	output->fb_fd = fb_fd;
 	output->base.name = strdup("fbdev");
 	output->base.destroy = fbdev_output_destroy;
-	output->base.disable = NULL;
+	output->base.disable = fbdev_output_disable;
 	output->base.enable = fbdev_output_enable;
 
 	weston_output_init(&output->base, backend->compositor);
