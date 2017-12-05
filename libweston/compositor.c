@@ -64,7 +64,7 @@
 #include "version.h"
 #include "plugin-registry.h"
 
-#define DEFAULT_REPAINT_WINDOW 7 /* milliseconds */
+#define DEFAULT_REPAINT_WINDOW 16 /* milliseconds */
 
 static void
 weston_output_transform_scale_init(struct weston_output *output,
