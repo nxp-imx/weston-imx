@@ -83,7 +83,7 @@
  * \defgroup compositor Compositor
  */
 
-#define DEFAULT_REPAINT_WINDOW 7 /* milliseconds */
+#define DEFAULT_REPAINT_WINDOW 16 /* milliseconds */
 
 static void
 weston_output_update_matrix(struct weston_output *output);
