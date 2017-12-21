@@ -4856,6 +4856,8 @@ parse_gbm_format(const char *s, uint32_t default_value, uint32_t *gbm_format)
 		*gbm_format = default_value;
 	else if (strcmp(s, "xrgb8888") == 0)
 		*gbm_format = GBM_FORMAT_XRGB8888;
+	else if (strcmp(s, "argb8888") == 0)
+		*gbm_format = GBM_FORMAT_ARGB8888;
 	else if (strcmp(s, "rgb565") == 0)
 		*gbm_format = GBM_FORMAT_RGB565;
 	else if (strcmp(s, "xrgb2101010") == 0)
