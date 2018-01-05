@@ -1986,7 +1986,7 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	    scanout_state->fb->type != BUFFER_PIXMAN_DUMB)
 		return;
 
-	if (!pixman_region32_not_empty(damage) &&
+	if (!b->use_g2d && !pixman_region32_not_empty(damage) &&
 	    scanout_plane->state_cur->fb &&
 	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
 	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
