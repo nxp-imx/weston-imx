@@ -51,7 +51,12 @@
 #include "compositor-drm.h"
 #include "shared/helpers.h"
 #include "shared/timespec-util.h"
+#if defined(ENABLE_OPENGL)
 #include "gl-renderer.h"
+#endif
+#if defined(ENABLE_IMXG2D)
+#include "g2d-renderer.h"
+#endif
 #include "weston-egl-ext.h"
 #include "pixman-renderer.h"
 #include "pixel-formats.h"
@@ -277,6 +282,9 @@ struct drm_backend {
 	bool atomic_modeset;
 
 	int use_pixman;
+#if defined(ENABLE_IMXG2D)
+	int use_g2d;
+#endif
 
 	struct udev_input input;
 
@@ -470,6 +478,9 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	pixman_image_t *image[2];
+#if defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
 	pixman_region32_t previous_damage;
 
@@ -479,7 +490,12 @@ struct drm_output {
 	struct wl_event_source *pageflip_timer;
 };
 
+#if defined(ENABLE_OPENGL)
 static struct gl_renderer_interface *gl_renderer;
+#endif
+#if defined(ENABLE_IMXG2D)
+static struct g2d_renderer_interface *g2d_renderer;
+#endif
 
 static const char default_seat[] = "seat0";
 
@@ -890,7 +906,8 @@ drm_fb_addfb(struct drm_fb *fb)
 						 fb->offsets, mods, &fb->fb_id,
 						 DRM_MODE_FB_MODIFIERS);
 #endif
-		return ret;
+		if (ret == 0)
+			return ret;
 	}
 
 	ret = drmModeAddFB2(fb->fd, fb->width, fb->height, fb->format->format,
@@ -1934,6 +1951,36 @@ drm_output_render_pixman(struct drm_output_state *state,
 	return drm_fb_ref(output->dumb[output->current_image]);
 }
 
+#if defined(ENABLE_IMXG2D)
+static struct drm_fb *
+drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage)
+{
+	struct drm_output *output = state->output;
+	struct weston_compositor *ec = output->base.compositor;
+	pixman_region32_t total_damage, previous_damage;
+
+	pixman_region32_init(&total_damage);
+	pixman_region32_init(&previous_damage);
+
+	pixman_region32_copy(&previous_damage, damage);
+
+	pixman_region32_union(&total_damage, damage, &output->previous_damage);
+	pixman_region32_copy(&output->previous_damage, &previous_damage);
+
+	output->current_image ^= 1;
+
+	g2d_renderer->output_set_buffer(&output->base,
+					  &output->g2d_image[output->current_image]);
+
+	ec->renderer->repaint_output(&output->base, &total_damage);
+
+	pixman_region32_fini(&total_damage);
+	pixman_region32_fini(&previous_damage);
+
+	return drm_fb_ref(output->dumb[output->current_image]);
+}
+#endif
+
 static void
 drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 {
@@ -1943,6 +1990,7 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_backend *b = to_drm_backend(c);
 	struct drm_fb *fb;
+	char *p;
 
 	/* If we already have a client buffer promoted to scanout, then we don't
 	 * want to render. */
@@ -1953,7 +2001,11 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	    scanout_state->fb->type != BUFFER_PIXMAN_DUMB)
 		return;
 
-	if (!pixman_region32_not_empty(damage) &&
+	if (
+#if defined(ENABLE_IMXG2D)
+	    !b->use_g2d &&
+#endif
+	    !pixman_region32_not_empty(damage) &&
 	    scanout_plane->state_cur->fb &&
 	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
 	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
@@ -1964,9 +2016,15 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
-	} else {
-		fb = drm_output_render_gl(state, damage);
 	}
+#if defined(ENABLE_IMXG2D)
+	else if (b->use_g2d)
+		fb = drm_output_render_g2d(state, damage);
+#endif
+#if defined(ENABLE_OPENGL)
+	else
+		fb = drm_output_render_gl(state, damage);
+#endif
 
 	if (!fb) {
 		drm_plane_state_put_back(scanout_state);
@@ -1987,7 +2045,18 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	scanout_state->dest_w = scanout_state->src_w >> 16;
 	scanout_state->dest_h = scanout_state->src_h >> 16;
 
-
+	p = getenv("DESKTOP_SHELL_WINDOW");
+	if (p) {
+		uint32_t width, height;
+		int n;
+		n = sscanf(p, "%dx%d", &width, &height);
+		if (n == 2) {
+			if (scanout_state->src_w > (width << 16))
+				scanout_state->src_w = width << 16;
+			if (scanout_state->src_h > (height << 16))
+				scanout_state->src_h = height << 16;
+		}
+	}
 	pixman_region32_subtract(&c->primary_plane.damage,
 				 &c->primary_plane.damage, damage);
 }
@@ -2105,14 +2174,8 @@ drm_output_apply_state_legacy(struct drm_output_state *state)
 	 * legacy PageFlip API doesn't allow us to do clipping either. */
 	assert(scanout_state->src_x == 0);
 	assert(scanout_state->src_y == 0);
-	assert(scanout_state->src_w ==
-		(unsigned) (output->base.current_mode->width << 16));
-	assert(scanout_state->src_h ==
-		(unsigned) (output->base.current_mode->height << 16));
 	assert(scanout_state->dest_x == 0);
 	assert(scanout_state->dest_y == 0);
-	assert(scanout_state->dest_w == scanout_state->src_w >> 16);
-	assert(scanout_state->dest_h == scanout_state->src_h >> 16);
 
 	mode = to_drm_mode(output->base.current_mode);
 	if (backend->state_invalid ||
@@ -3456,14 +3519,22 @@ choose_mode (struct drm_output *output, struct weston_mode *target_mode)
 	return tmp_mode;
 }
 
+#if defined(ENABLE_OPENGL)
 static int
 drm_output_init_egl(struct drm_output *output, struct drm_backend *b);
 static void
 drm_output_fini_egl(struct drm_output *output);
+#endif
 static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b);
 static void
 drm_output_fini_pixman(struct drm_output *output);
+#if defined(ENABLE_IMXG2D)
+static int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b);
+static void
+drm_output_fini_g2d(struct drm_output *output);
+#endif
 
 static int
 drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mode)
@@ -3502,6 +3573,16 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
+#if defined(ENABLE_IMXG2D)
+	} else if (b->use_g2d) {
+		drm_output_fini_g2d(output);
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("failed to init output g2d state with "
+				   "new mode\n");
+			return -1;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else {
 		drm_output_fini_egl(output);
 		if (drm_output_init_egl(output, b) < 0) {
@@ -3509,6 +3590,7 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode");
 			return -1;
 		}
+#endif
 	}
 
 	return 0;
@@ -3604,6 +3686,7 @@ init_kms_caps(struct drm_backend *b)
 	return 0;
 }
 
+#if defined(ENABLE_OPENGL)
 static struct gbm_device *
 create_gbm_device(int fd)
 {
@@ -3689,12 +3772,50 @@ init_egl(struct drm_backend *b)
 
 	return 0;
 }
+#endif
 
 static int
 init_pixman(struct drm_backend *b)
 {
 	return pixman_renderer_init(b->compositor);
 }
+
+#if defined(ENABLE_IMXG2D)
+static int
+drm_backend_create_g2d_renderer(struct drm_backend *b)
+{
+	if (g2d_renderer->drm_display_create(b->compositor,
+					(void *)b->gbm) < 0) {
+		return -1;
+	}
+
+	return 0;
+}
+#endif
+
+#if defined(ENABLE_IMXG2D)
+static int
+init_g2d(struct drm_backend *b)
+{
+	g2d_renderer = weston_load_module("g2d-renderer.so",
+						 "g2d_renderer_interface");
+	if (!g2d_renderer) {
+		weston_log("Could not load g2d renderer\n");
+		return -1;
+	}
+
+	b->gbm = gbm_create_device(b->drm.fd);
+	if (!b->gbm)
+		return -1;
+
+	if (drm_backend_create_g2d_renderer(b) < 0) {
+		gbm_device_destroy(b->gbm);
+		return -1;
+	}
+
+	return 0;
+}
+#endif
 
 /**
  * Populates the formats array, and the modifiers of each format for a drm_plane.
@@ -4365,6 +4486,7 @@ err:
 	return -1;
 }
 
+#if defined(ENABLE_OPENGL)
 /* Init output state that depends on gl or gbm */
 static int
 drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
@@ -4429,7 +4551,9 @@ drm_output_init_egl(struct drm_output *output, struct drm_backend *b)
 
 	return 0;
 }
+#endif
 
+#if defined(ENABLE_OPENGL)
 static void
 drm_output_fini_egl(struct drm_output *output)
 {
@@ -4450,6 +4574,7 @@ drm_output_fini_egl(struct drm_output *output)
 	gbm_surface_destroy(output->gbm_surface);
 	drm_output_fini_cursor_egl(output);
 }
+#endif
 
 static int
 drm_output_init_pixman(struct drm_output *output, struct drm_backend *b)
@@ -4535,6 +4660,80 @@ drm_output_fini_pixman(struct drm_output *output)
 		output->image[i] = NULL;
 	}
 }
+
+#if defined(ENABLE_IMXG2D)
+static int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
+{
+	int w = output->base.current_mode->width;
+	int h = output->base.current_mode->height;
+	uint32_t format = output->gbm_format;
+	enum g2d_format g2dFormat;
+	uint32_t i = 0;
+
+	switch (format) {
+		case GBM_FORMAT_XRGB8888:
+			g2dFormat = G2D_BGRX8888;
+			break;
+		case GBM_FORMAT_RGB565:
+			g2dFormat = G2D_RGB565;
+			break;
+		default:
+			weston_log("Unsupported pixman format 0x%x\n", format);
+			return -1;
+	}
+
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		struct g2d_surfaceEx* g2dSurface = &(output->g2d_image[i]);
+		int ret;
+		output->dumb[i] = drm_fb_create_dumb(b, w, h, format);
+		if (!output->dumb[i])
+			goto err;
+
+		ret = g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
+						output->dumb[i]->map,
+						w, h,
+						output->dumb[i]->strides[0],
+						output->dumb[i]->size);
+		if (ret < 0)
+			goto err;
+	}
+
+	if (g2d_renderer->drm_output_create(&output->base) < 0)
+		goto err;
+
+	drm_output_init_cursor_egl(output, b);
+
+	return 0;
+
+err:
+	weston_log("drm_output_init_g2d failed.\n");
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		if (output->dumb[i])
+			drm_fb_unref(output->dumb[i]);
+
+		output->dumb[i] = NULL;
+	}
+
+	return -1;
+}
+#endif
+
+#if defined(ENABLE_IMXG2D)
+static void
+drm_output_fini_g2d(struct drm_output *output)
+{
+	unsigned int i;
+
+	pixman_region32_fini(&output->previous_damage);
+
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		drm_fb_unref(output->dumb[i]);
+		output->dumb[i] = NULL;
+	}
+	g2d_renderer->output_destroy(&output->base);
+}
+#endif
 
 static void
 edid_parse_string(const uint8_t *data, char text[])
@@ -4765,6 +4964,8 @@ parse_gbm_format(const char *s, uint32_t default_value, uint32_t *gbm_format)
 		*gbm_format = default_value;
 	else if (strcmp(s, "xrgb8888") == 0)
 		*gbm_format = GBM_FORMAT_XRGB8888;
+	else if (strcmp(s, "argb8888") == 0)
+		*gbm_format = GBM_FORMAT_ARGB8888;
 	else if (strcmp(s, "rgb565") == 0)
 		*gbm_format = GBM_FORMAT_RGB565;
 	else if (strcmp(s, "xrgb2101010") == 0)
@@ -4961,9 +5162,18 @@ drm_output_enable(struct weston_output *base)
 			weston_log("Failed to init output pixman state\n");
 			goto err;
 		}
+#if defined(ENABLE_IMXG2D)
+	} else if (b->use_g2d) {
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("Failed to init output g2d state\n");
+			goto err;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else if (drm_output_init_egl(output, b) < 0) {
 		weston_log("Failed to init output gl state\n");
 		goto err;
+#endif
 	}
 
 	if (output->backlight) {
@@ -5020,8 +5230,14 @@ drm_output_deinit(struct weston_output *base)
 
 	if (b->use_pixman)
 		drm_output_fini_pixman(output);
+#if defined(ENABLE_IMXG2D)
+	else if (b->use_g2d)
+		drm_output_fini_g2d(output);
+#endif
+#if defined(ENABLE_OPENGL)
 	else
 		drm_output_fini_egl(output);
+#endif
 
 	/* Since our planes are no longer in use anywhere, remove their base
 	 * weston_plane's link from the plane stacking list, unless we're
@@ -5868,6 +6084,7 @@ recorder_binding(struct weston_keyboard *keyboard, const struct timespec *time,
 }
 #endif
 
+#if defined(ENABLE_OPENGL)
 static void
 switch_to_gl_renderer(struct drm_backend *b)
 {
@@ -5911,7 +6128,9 @@ switch_to_gl_renderer(struct drm_backend *b)
 				   "support failed.\n");
 	}
 }
+#endif
 
+#if defined(ENABLE_OPENGL)
 static void
 renderer_switch_binding(struct weston_keyboard *keyboard,
 			const struct timespec *time, uint32_t key, void *data)
@@ -5921,6 +6140,7 @@ renderer_switch_binding(struct weston_keyboard *keyboard,
 
 	switch_to_gl_renderer(b);
 }
+#endif
 
 static const struct weston_drm_output_api api = {
 	drm_output_set_mode,
@@ -5951,6 +6171,9 @@ drm_backend_create(struct weston_compositor *compositor,
 
 	b->compositor = compositor;
 	b->use_pixman = config->use_pixman;
+#if defined(ENABLE_IMXG2D)
+	b->use_g2d = config->use_g2d;
+#endif
 	b->pageflip_timeout = config->pageflip_timeout;
 
 	compositor->backend = &b->base;
@@ -5999,11 +6222,20 @@ drm_backend_create(struct weston_compositor *compositor,
 			weston_log("failed to initialize pixman renderer\n");
 			goto err_udev_dev;
 		}
+#if defined(ENABLE_IMXG2D)
+	} else if(b->use_g2d){
+		if (init_g2d(b) < 0) {
+			weston_log("failed to initialize g2d render\n");
+			goto err_udev_dev;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else {
 		if (init_egl(b) < 0) {
 			weston_log("failed to initialize egl\n");
 			goto err_udev_dev;
 		}
+#endif
 	}
 
 	b->base.destroy = drm_destroy;
@@ -6021,7 +6253,6 @@ drm_backend_create(struct weston_compositor *compositor,
 			    compositor, b->udev, seat_id,
 			    config->configure_device) < 0) {
 		weston_log("failed to create input devices\n");
-		goto err_sprite;
 	}
 
 	if (create_outputs(b, drm_device) < 0) {
@@ -6066,8 +6297,10 @@ drm_backend_create(struct weston_compositor *compositor,
 					    planes_binding, b);
 	weston_compositor_add_debug_binding(compositor, KEY_Q,
 					    recorder_binding, b);
+#if defined(ENABLE_OPENGL)
 	weston_compositor_add_debug_binding(compositor, KEY_W,
 					    renderer_switch_binding, b);
+#endif
 
 	if (compositor->renderer->import_dmabuf) {
 		if (linux_dmabuf_setup(compositor) < 0)
@@ -6092,7 +6325,6 @@ err_drm_source:
 	wl_event_source_remove(b->drm_source);
 err_udev_input:
 	udev_input_destroy(&b->input);
-err_sprite:
 	if (b->gbm)
 		gbm_device_destroy(b->gbm);
 	destroy_sprites(b);
@@ -6111,6 +6343,14 @@ err_compositor:
 static void
 config_init_to_defaults(struct weston_drm_backend_config *config)
 {
+#if !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config->use_pixman = 1;
+#else
+	config->use_pixman = 0;
+#endif
+#if !defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+	config->use_g2d = 1;
+#endif
 }
 
 WL_EXPORT int
