@@ -485,7 +485,7 @@ fbdev_frame_buffer_unmap(struct fbdev_output *output)
 #endif
 }
 
-static int fbdev_output_destroy(struct weston_output *base);
+static void fbdev_output_destroy(struct weston_output *base);
 static int fbdev_output_disable(struct weston_output *base);
 
 static int
@@ -554,6 +554,7 @@ static int
 fbdev_output_disable(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *backend = to_fbdev_backend(base->compositor);
 
 	if (!base->enabled)
 		return 0;
@@ -561,8 +562,10 @@ fbdev_output_disable(struct weston_output *base)
 	wl_event_source_remove(output->finish_frame_timer);
 	output->finish_frame_timer = NULL;
 
-	pixman_renderer_output_destroy(&output->base);
-	fbdev_frame_buffer_unmap(output);
+	if (backend->use_pixman) {
+		pixman_renderer_output_destroy(&output->base);
+		fbdev_frame_buffer_unmap(output);
+	}
 
 	return 0;
 }
@@ -630,7 +633,7 @@ out_free:
 	return -1;
 }
 
-static int
+static void
 fbdev_output_destroy(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
@@ -659,7 +662,6 @@ fbdev_output_destroy(struct weston_output *base)
 
 	free(output->device);
 	free(output);
-	return 0;
 }
 
 /* strcmp()-style return values. */
