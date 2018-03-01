@@ -1068,6 +1068,15 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 #endif
 	free(ec->renderer);
 	ec->renderer = NULL;
+
+	/* remove use-g2d-renderer */
+	char *dir, *path;
+	dir = getenv("XDG_RUNTIME_DIR");
+	path = malloc(strlen(dir) + 40);
+	strcpy(path, dir);
+	strcat(path, "/use-g2d-renderer");
+	remove(path);
+	free(path);
 }
 
 static int
@@ -1103,6 +1112,16 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->renderer = &gr->base;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
 	wl_signal_init(&gr->destroy_signal);
+
+	/* create use-g2d-renderer */
+	char *dir, *path;
+	dir = getenv("XDG_RUNTIME_DIR");
+	path = malloc(strlen(dir) + 40);
+	strcpy(path, dir);
+	strcat(path, "/use-g2d-renderer");
+	close(open(path, O_CREAT | O_RDWR));
+	free(path);
+
 	return 0;
 }
 
