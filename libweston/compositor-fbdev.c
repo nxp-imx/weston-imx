@@ -69,7 +69,7 @@ struct fbdev_backend {
 #ifdef ENABLE_IMXG2D
 	int use_g2d;
 	int clone_mode;
-	char *clone_device;
+	char clone_device[50];
 #endif
 	uint32_t output_transform;
 	struct wl_listener session_listener;
@@ -506,7 +506,7 @@ fbdev_output_enable(struct weston_output *base)
 	} else if (backend->use_g2d) {
 		const char *g2d_device = output->device;
 		if (backend->clone_mode)
-			g2d_device = backend->clone_device;
+			g2d_device = &(backend->clone_device[0]);
 
 		if (g2d_renderer->output_create(&output->base,
 					backend->compositor->wl_display, g2d_device) < 0) {
@@ -848,7 +848,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 #ifdef ENABLE_IMXG2D
 	backend->use_g2d = param->use_g2d;
 	backend->clone_mode = param->clone_mode;
-	backend->clone_device = param->device;
+	memcpy(&backend->clone_device[0], param->device, strlen(param->device));
 #endif
 	backend->output_transform = param->output_transform;
 
