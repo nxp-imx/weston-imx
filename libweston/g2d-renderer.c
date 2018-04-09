@@ -44,7 +44,7 @@
 #include "vertex-clipping.h"
 #include "shared/helpers.h"
 
-#define BUFFER_DAMAGE_COUNT 2
+#define BUFFER_DAMAGE_COUNT 3
 #define ALIGN_WIDTH(a) (((a) + 15) & ~15)
 
 static PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
@@ -374,7 +374,7 @@ g2d_SetSurfaceRect(struct g2d_surfaceEx* g2dSurface, g2dRECT* rect)
     || format==G2D_ARGB8888 || format==G2D_ABGR8888)
 
 static int
-g2d_blitSurface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_surfaceEx *dstG2dSurface, 
+g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_surfaceEx *dstG2dSurface,
 	g2dRECT *srcRect, g2dRECT *dstRect)
 {
 	g2d_SetSurfaceRect(srcG2dSurface, srcRect);
@@ -435,7 +435,7 @@ copy_to_framebuffer(struct weston_output *output)
 		g2dRECT dstrect  = srcRect;
 		clipRect = srcRect;
 		g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
-		g2d_blitSurface(gr->handle, &go->offscreenSurface,
+		g2d_blit_surface(gr->handle, &go->offscreenSurface,
 			&go->renderSurf[go->activebuffer], &srcRect, &dstrect);
 	}
 
@@ -448,12 +448,12 @@ copy_to_framebuffer(struct weston_output *output)
 			g2dRECT dstrect  = {0, 0, go->mirrorSurf[i].base.width, go->mirrorSurf[i].base.height};
 			if(go->directBlit || go->nNumBuffers > 1)
 			{
-				g2d_blitSurface(gr->handle, &go->renderSurf[go->activebuffer],
+				g2d_blit_surface(gr->handle, &go->renderSurf[go->activebuffer],
 				&go->mirrorSurf[i], &srcRect, &dstrect);
 			}
 			else
 			{
-				g2d_blitSurface(gr->handle, &go->offscreenSurface,
+				g2d_blit_surface(gr->handle, &go->offscreenSurface,
 					&go->mirrorSurf[i], &srcRect, &dstrect);
 			}
 		}
@@ -642,7 +642,7 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 				clipRect.right = clipRect.right - output->x;
 			}
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
-			g2d_blitSurface(gr->handle, &gs->g2d_surface, dstsurface, &srcRect, &dstrect);
+			g2d_blit_surface(gr->handle, &gs->g2d_surface, dstsurface, &srcRect, &dstrect);
 		}
 	}
 }
@@ -710,31 +710,53 @@ repaint_views(struct weston_output *output, pixman_region32_t *damage)
 }
 
 static void
+output_get_damage(struct weston_output *output,
+		  pixman_region32_t *buffer_damage,
+		  pixman_region32_t *output_damage)
+{
+	struct g2d_output_state *go = get_output_state(output);
+	int i;
+
+	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
+		pixman_region32_union(&go->buffer_damage[i],
+			&go->buffer_damage[i],
+			output_damage);
+
+	pixman_region32_union(output_damage, output_damage,
+		&go->buffer_damage[go->current_buffer]);
+
+	pixman_region32_union(buffer_damage, buffer_damage, &go->buffer_damage[go->current_buffer]);
+}
+
+static void
 g2d_renderer_repaint_output(struct weston_output *output,
 			     pixman_region32_t *output_damage)
 {
 	struct g2d_output_state *go = get_output_state(output);
 	struct weston_compositor *compositor = output->compositor;
 	struct g2d_renderer *gr = get_renderer(compositor);
-	int i;
+	pixman_region32_t buffer_damage, total_damage;
 
 	use_output(output);
-	for (i = 0; i < 2; i++)
-		pixman_region32_union(&go->buffer_damage[i],
-				      &go->buffer_damage[i],
-				      output_damage);
 
-	pixman_region32_union(output_damage, output_damage,
-			      &go->buffer_damage[go->current_buffer]);
+	pixman_region32_init(&total_damage);
+	pixman_region32_init(&buffer_damage);
 
-	repaint_views(output, output_damage);
+	output_get_damage(output, &buffer_damage, output_damage);
+	pixman_region32_union(&total_damage, &buffer_damage, &output->previous_damage);
+
+	repaint_views(output, &total_damage);
+
+	pixman_region32_fini(&total_damage);
+	pixman_region32_fini(&buffer_damage);
+
 	g2d_finish(gr->handle);
 
 	pixman_region32_copy(&output->previous_damage, output_damage);
 	wl_signal_emit(&output->frame_signal, output);
 	if(!gr->use_drm)
 		copy_to_framebuffer(output);
-	go->current_buffer ^= 1;
+	go->current_buffer = (go->current_buffer + 1) % BUFFER_DAMAGE_COUNT;
 }
 
 static void
@@ -1316,7 +1338,7 @@ getBufferNumber(struct g2d_output_state *go)
 	p = getenv("FB_MULTI_BUFFER");
 	if (p == gcvNULL)
 	{
-		go->nNumBuffers = 1;
+		go->nNumBuffers = BUFFER_DAMAGE_COUNT;
 	}
 	else
 	{
@@ -1325,13 +1347,13 @@ getBufferNumber(struct g2d_output_state *go)
 		{
 			go->nNumBuffers  = 1;
 		}
-		else if(go->nNumBuffers >= 2)
+		else if(go->nNumBuffers >= BUFFER_DAMAGE_COUNT)
 		{
-			go->nNumBuffers = 2;
+			go->nNumBuffers = BUFFER_DAMAGE_COUNT;
 			go->activebuffer = 1;
 		}
 	}
-	weston_log("FB_MULTI_BUFFER = %d\n", go->nNumBuffers);
+	weston_log("The number of the Framebuffer: %d\n", go->nNumBuffers);
 }
 
 static int
