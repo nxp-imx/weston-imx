@@ -525,6 +525,15 @@ bind_linux_dmabuf(struct wl_client *client,
 			free(modifiers);
 	}
 	free(formats);
+	formats = NULL;
+	
+	if (compositor->backend->query_dmabuf_formats) {
+		compositor->backend->query_dmabuf_formats(compositor, &formats, &num_formats);
+		for (i = 0; i < num_formats; i++) {
+			zwp_linux_dmabuf_v1_send_format(resource, formats[i]);
+		}
+		free(formats);
+	}
 }
 
 /** Advertise linux_dmabuf support
