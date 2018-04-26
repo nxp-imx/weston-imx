@@ -1029,7 +1029,8 @@ drm_fb_destroy_dmabuf(struct drm_fb *fb)
 {
 	/* We deliberately do not close the GEM handles here; GBM manages
 	 * their lifetime through the BO. */
-	gbm_bo_destroy(fb->bo);
+	if (fb->bo)
+		gbm_bo_destroy(fb->bo);
 	drm_fb_destroy(fb);
 }
 
@@ -1054,6 +1055,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		.modifier = dmabuf->attributes.modifier[0],
 	};
 	int i;
+	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
 
         /* XXX: TODO:
          *
@@ -1090,8 +1092,8 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 				       GBM_BO_USE_SCANOUT);
 	}
 
-	if (!fb->bo)
-		goto err_free;
+	//if (!fb->bo)
+	//	goto err_free;
 
 	fb->width = dmabuf->attributes.width;
 	fb->height = dmabuf->attributes.height;
@@ -1119,15 +1121,37 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		goto err_free;
 	}
 
-	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
-		fb->handles[i] = gbm_bo_get_handle_for_plane(fb->bo, i).u32;
-		if (!fb->handles[i])
-			goto err_free;
+	if (fb->bo) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			fb->handles[i] = gbm_bo_get_handle_for_plane(fb->bo, i).u32;
+			if (!fb->handles[i])
+				goto err_free;
+		}
+	} else {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int ret;
+			ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
+			if (ret) {
+				weston_log ("got gem_handle %x\n", gem_handle[i]);
+				goto err_free;
+			}
+			fb->handles[i] = gem_handle[i];
+		}
 	}
 
 	if (drm_fb_addfb(fb) != 0) {
 		weston_log("failed to create kms fb: %m\n");
 		goto err_free;
+	}
+
+	if (gem_handle[0] != 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int err;
+			struct drm_gem_close arg = { gem_handle[i], };
+			err = drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
+			if (err)
+				weston_log ("failed to close gem handle\n");
+		}
 	}
 
 	return fb;
@@ -2390,6 +2414,11 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	wl_list_for_each(plane_state, &state->plane_list, link) {
 		struct drm_plane *plane = plane_state->plane;
 
+		/* if no valid framebuffer provide, ignore this plane */
+		if (!plane_state->fb || plane_state->fb->fb_id == 0) {
+			continue;
+		}
+
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_FB_ID,
 				      plane_state->fb ? plane_state->fb->fb_id : 0);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_ID,
@@ -3351,6 +3380,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		bool force_renderer = false;
 		pixman_region32_t clipped_view;
 		bool occluded = false;
+		struct linux_dmabuf_buffer *dmabuf = NULL;
 
 		/* If this view doesn't touch our output at all, there's no
 		 * reason to do anything with it. */
@@ -3364,6 +3394,16 @@ drm_output_propose_state(struct weston_output *output_base,
 
 		if (!ev->surface->buffer_ref.buffer)
 			force_renderer = true;
+		else {
+			struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
+			if (dmabuf && dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
+				ps = drm_output_prepare_overlay_view(state, ev, mode);
+				if (ps) {
+					goto next_view;
+				}
+			}
+		}
 
 		/* Ignore views we know to be totally occluded. */
 		pixman_region32_init(&clipped_view);
@@ -3391,8 +3431,8 @@ drm_output_propose_state(struct weston_output *output_base,
 		pixman_region32_fini(&surface_overlap);
 
 		if (force_renderer && !renderer_ok) {
-			pixman_region32_fini(&clipped_view);
-			goto err;
+			//pixman_region32_fini(&clipped_view);
+			goto next_view;
 		}
 
 		/* The cursor plane is 'special' in the sense that we can still
@@ -3416,16 +3456,18 @@ drm_output_propose_state(struct weston_output *output_base,
 			pixman_region32_fini(&clipped_view);
 			continue;
 		}
-		if (!renderer_ok) {
-			pixman_region32_fini(&clipped_view);
-			goto err;
-		}
+		//if (!renderer_ok) {
+		//	pixman_region32_fini(&clipped_view);
+		//	goto err;
+		//}
 
+next_view:
 		pixman_region32_union(&renderer_region,
 				      &renderer_region,
 				      &clipped_view);
 		pixman_region32_fini(&clipped_view);
 	}
+
 	pixman_region32_fini(&renderer_region);
 	pixman_region32_fini(&occluded_region);
 
