@@ -88,6 +88,8 @@
 #define GBM_BO_USE_CURSOR GBM_BO_USE_CURSOR_64X64
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 #ifdef HAVE_DRM_FORMATS_BLOB
 static inline uint32_t *
 formats_ptr(struct drm_format_modifier_blob *blob)
@@ -890,6 +892,7 @@ drm_fb_addfb(struct drm_fb *fb)
 #ifdef HAVE_DRM_ADDFB2_MODIFIERS
 	uint64_t mods[4] = { };
 	int i;
+	int width, height;
 #endif
 
 	/* If we have a modifier set, we must only use the WithModifiers
@@ -900,7 +903,14 @@ drm_fb_addfb(struct drm_fb *fb)
 #ifdef HAVE_DRM_ADDFB2_MODIFIERS
 		for (i = 0; i < (int) ARRAY_LENGTH(mods) && fb->handles[i]; i++)
 			mods[i] = fb->modifier;
-		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
+			width = ALIGNTO (fb->width, 8);
+			height = ALIGNTO (fb->height, 256);
+		} else {
+			width = fb->width;
+			height = fb->height;
+		}
+		ret = drmModeAddFB2WithModifiers(fb->fd, width, height,
 						 fb->format->format,
 						 fb->handles, fb->strides,
 						 fb->offsets, mods, &fb->fb_id,
