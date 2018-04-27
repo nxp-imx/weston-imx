@@ -30,6 +30,10 @@
 #include <unistd.h>
 #include <sys/types.h>
 
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+#include <drm_fourcc.h>
+
 #include "compositor.h"
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
@@ -112,11 +116,17 @@ params_add(struct wl_client *client,
 	buffer->attributes.offset[plane_idx] = offset;
 	buffer->attributes.stride[plane_idx] = stride;
 
-	if (wl_resource_get_version(params_resource) < ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION)
-		buffer->attributes.modifier[plane_idx] = DRM_FORMAT_MOD_INVALID;
-	else
-		buffer->attributes.modifier[plane_idx] = ((uint64_t)modifier_hi << 32) |
-							 modifier_lo;
+	/* FIXME: workaround for version low */
+	uint64_t modifier = ((uint64_t)modifier_hi << 32) | modifier_lo;
+	if (modifier != DRM_FORMAT_MOD_AMPHION_TILED) {
+		if (wl_resource_get_version(params_resource) < ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION)
+			buffer->attributes.modifier[plane_idx] = DRM_FORMAT_MOD_INVALID;
+		else
+			buffer->attributes.modifier[plane_idx] = ((uint64_t)modifier_hi << 32) |
+								modifier_lo;
+	} else {
+		buffer->attributes.modifier[plane_idx] = modifier;
+	}
 
 	buffer->attributes.n_planes++;
 }
