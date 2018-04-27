@@ -2972,6 +2972,21 @@ desktop_shell_set_background(struct wl_client *client,
 	surface->output = weston_output_from_resource(output_resource);
 	view->output = surface->output;
 
+	char *p;
+	p = getenv("DESKTOP_SHELL_WINDOW");
+	if (p) {
+		int32_t width, height;
+		int n;
+
+		n = sscanf(p, "%dx%d", &width, &height);
+		if (n == 2) {
+			if (surface->output->width > width)
+				surface->output->width = width;
+			if (surface->output->height > height)
+				surface->output->height = height;
+		}
+	}
+
 	sh_output = find_shell_output_from_weston_output(shell, surface->output);
 	if (sh_output->background_surface) {
 		/* The output already has a background, tell our helper
@@ -3068,6 +3083,21 @@ desktop_shell_set_panel(struct wl_client *client,
 	weston_surface_set_label_func(surface, panel_get_label);
 	surface->output = weston_output_from_resource(output_resource);
 	view->output = surface->output;
+
+    char *p;
+	p = getenv("DESKTOP_SHELL_WINDOW");
+	if (p) {
+		int32_t width, height;
+		int n;
+
+		n = sscanf(p, "%dx%d", &width, &height);
+		if (n == 2) {
+			if (surface->output->width > width)
+				surface->output->width = width;
+			if (surface->output->height > height)
+				surface->output->height = height;
+		}
+	}
 
 	sh_output = find_shell_output_from_weston_output(shell, surface->output);
 	if (sh_output->panel_surface) {
