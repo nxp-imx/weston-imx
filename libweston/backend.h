@@ -95,6 +95,12 @@ struct weston_backend {
 	 */
 	void (*device_changed)(struct weston_compositor *compositor,
 			       dev_t device, bool added);
+
+	void (*query_dmabuf_formats)(struct weston_compositor* compositor,
+					int **formats, int *num_formats);
+    void (*query_dmabuf_modifiers)(struct weston_compositor *compositor,
+                    int format, uint64_t **modifiers,
+                    int *num_modifiers);
 };
 
 /* weston_head */
