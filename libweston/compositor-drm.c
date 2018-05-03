@@ -298,8 +298,12 @@ struct drm_fb {
 
 	int refcnt;
 
-	uint32_t fb_id, stride, handle, size;
+	uint32_t fb_id, size;
+	uint32_t handles[4];
+	uint32_t strides[4];
+	uint32_t offsets[4];
 	const struct pixel_format_info *format;
+	uint64_t modifier;
 	int width, height;
 	int fd;
 	struct weston_buffer_reference buffer_ref;
@@ -843,7 +847,7 @@ drm_fb_destroy_dumb(struct drm_fb *fb)
 		munmap(fb->map, fb->size);
 
 	memset(&destroy_arg, 0, sizeof(destroy_arg));
-	destroy_arg.handle = fb->handle;
+	destroy_arg.handle = fb->handles[0];
 	drmIoctl(fb->fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_arg);
 
 	drm_fb_destroy(fb);
@@ -859,6 +863,54 @@ drm_fb_destroy_gbm(struct gbm_bo *bo, void *data)
 	drm_fb_destroy(fb);
 }
 
+static int
+drm_fb_addfb(struct drm_fb *fb)
+{
+	int ret = -EINVAL;
+#ifdef HAVE_DRM_ADDFB2_MODIFIERS
+	uint64_t mods[4] = { };
+	int i;
+#endif
+
+	/* If we have a modifier set, we must only use the WithModifiers
+	 * entrypoint; we cannot import it through legacy ioctls. */
+	if (fb->modifier != DRM_FORMAT_MOD_INVALID) {
+		/* KMS demands that if a modifier is set, it must be the same
+		 * for all planes. */
+#ifdef HAVE_DRM_ADDFB2_MODIFIERS
+		for (i = 0; i < (int) ARRAY_LENGTH(mods) && fb->handles[i]; i++)
+			mods[i] = fb->modifier;
+		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+						 fb->format->format,
+						 fb->handles, fb->strides,
+						 fb->offsets, mods, &fb->fb_id,
+						 DRM_MODE_FB_MODIFIERS);
+#endif
+		if (ret == 0)
+			return ret;
+	}
+
+	ret = drmModeAddFB2(fb->fd, fb->width, fb->height, fb->format->format,
+			    fb->handles, fb->strides, fb->offsets, &fb->fb_id,
+			    0);
+	if (ret == 0)
+		return 0;
+
+	/* Legacy AddFB can't always infer the format from depth/bpp alone, so
+	 * check if our format is one of the lucky ones. */
+	if (!fb->format->depth || !fb->format->bpp)
+		return ret;
+
+	/* Cannot fall back to AddFB for multi-planar formats either. */
+	if (fb->handles[1] || fb->handles[2] || fb->handles[3])
+		return ret;
+
+	ret = drmModeAddFB(fb->fd, fb->width, fb->height,
+			   fb->format->depth, fb->format->bpp,
+			   fb->strides[0], fb->handles[0], &fb->fb_id);
+	return ret;
+}
+
 static struct drm_fb *
 drm_fb_create_dumb(struct drm_backend *b, int width, int height,
 		   uint32_t format)
@@ -869,12 +921,10 @@ drm_fb_create_dumb(struct drm_backend *b, int width, int height,
 	struct drm_mode_create_dumb create_arg;
 	struct drm_mode_destroy_dumb destroy_arg;
 	struct drm_mode_map_dumb map_arg;
-	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
 
 	fb = zalloc(sizeof *fb);
 	if (!fb)
 		return NULL;
-
 	fb->refcnt = 1;
 
 	fb->format = pixel_format_get_info(format);
@@ -900,30 +950,21 @@ drm_fb_create_dumb(struct drm_backend *b, int width, int height,
 		goto err_fb;
 
 	fb->type = BUFFER_PIXMAN_DUMB;
-	fb->handle = create_arg.handle;
-	fb->stride = create_arg.pitch;
+	fb->modifier = DRM_FORMAT_MOD_INVALID;
+	fb->handles[0] = create_arg.handle;
+	fb->strides[0] = create_arg.pitch;
 	fb->size = create_arg.size;
 	fb->width = width;
 	fb->height = height;
 	fb->fd = b->drm.fd;
 
-	handles[0] = fb->handle;
-	pitches[0] = fb->stride;
-	offsets[0] = 0;
-
-	ret = drmModeAddFB2(b->drm.fd, width, height, fb->format->format,
-			    handles, pitches, offsets, &fb->fb_id, 0);
-	if (ret) {
-		ret = drmModeAddFB(b->drm.fd, width, height,
-				   fb->format->depth, fb->format->bpp,
-				   fb->stride, fb->handle, &fb->fb_id);
+	if (drm_fb_addfb(fb) != 0) {
+		weston_log("failed to create kms fb: %m\n");
+		goto err_bo;
 	}
 
-	if (ret)
-		goto err_bo;
-
 	memset(&map_arg, 0, sizeof map_arg);
-	map_arg.handle = fb->handle;
+	map_arg.handle = fb->handles[0];
 	ret = drmIoctl(fb->fd, DRM_IOCTL_MODE_MAP_DUMB, &map_arg);
 	if (ret)
 		goto err_add_fb;
@@ -958,8 +999,9 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 		   uint32_t format, enum drm_fb_type type)
 {
 	struct drm_fb *fb = gbm_bo_get_user_data(bo);
-	uint32_t handles[4] = { 0 }, pitches[4] = { 0 }, offsets[4] = { 0 };
-	int ret;
+#ifdef HAVE_GBM_MODIFIERS
+	int i;
+#endif
 
 	if (fb) {
 		assert(fb->type == type);
@@ -975,18 +1017,29 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 	fb->type = type;
 	fb->refcnt = 1;
 	fb->bo = bo;
+	fb->fd = backend->drm.fd;
 
 	fb->width = gbm_bo_get_width(bo);
 	fb->height = gbm_bo_get_height(bo);
-	fb->stride = gbm_bo_get_stride(bo);
-	fb->handle = gbm_bo_get_handle(bo).u32;
 	fb->format = pixel_format_get_info(format);
-	fb->size = fb->stride * fb->height;
-	fb->fd = backend->drm.fd;
+	fb->size = 0;
+
+#ifdef HAVE_GBM_MODIFIERS
+	fb->modifier = gbm_bo_get_modifier(bo);
+	for (i = 0; i < gbm_bo_get_plane_count(bo); i++) {
+		fb->strides[i] = gbm_bo_get_stride_for_plane(bo, i);
+		fb->handles[i] = gbm_bo_get_handle_for_plane(bo, i).u32;
+		fb->offsets[i] = gbm_bo_get_offset(bo, i);
+	}
+#else
+	fb->strides[0] = gbm_bo_get_stride(bo);
+	fb->handles[0] = gbm_bo_get_handle(bo).u32;
+	fb->modifier = DRM_FORMAT_MOD_INVALID;
+#endif
 
 	if (!fb->format) {
 		weston_log("couldn't look up format 0x%lx\n",
-			   (unsigned long) format);
+			   (unsigned long) gbm_bo_get_format(bo));
 		goto err_free;
 	}
 
@@ -998,19 +1051,7 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 		goto err_free;
 	}
 
-	handles[0] = fb->handle;
-	pitches[0] = fb->stride;
-	offsets[0] = 0;
-
-	ret = drmModeAddFB2(backend->drm.fd, fb->width, fb->height,
-			    fb->format->format, handles, pitches, offsets,
-			    &fb->fb_id, 0);
-	if (ret && fb->format->depth && fb->format->bpp)
-		ret = drmModeAddFB(backend->drm.fd, fb->width, fb->height,
-				   fb->format->depth, fb->format->bpp,
-				   fb->stride, fb->handle, &fb->fb_id);
-
-	if (ret) {
+	if (drm_fb_addfb(fb) != 0) {
 		weston_log("failed to create kms fb: %m\n");
 		goto err_free;
 	}
@@ -1928,8 +1969,10 @@ drm_output_apply_state_legacy(struct drm_output_state *state)
 	assert(scanout_state->dest_y == 0);
 
 	mode = to_drm_mode(output->base.current_mode);
-	if (backend->state_invalid || !scanout_plane->state_cur->fb ||
-	    scanout_plane->state_cur->fb->stride != scanout_state->fb->stride) {
+	if (backend->state_invalid ||
+	    !scanout_plane->state_cur->fb ||
+	    scanout_plane->state_cur->fb->strides[0] !=
+	    scanout_state->fb->strides[0]) {
 		ret = drmModeSetCrtc(backend->drm.fd, output->crtc_id,
 				     scanout_state->fb->fb_id,
 				     0, 0,
@@ -4239,7 +4282,7 @@ drm_output_init_pixman(struct drm_output *output, struct drm_backend *b)
 		output->image[i] =
 			pixman_image_create_bits(pixman_format, w, h,
 						 output->dumb[i]->map,
-						 output->dumb[i]->stride);
+						 output->dumb[i]->strides[0]);
 		if (!output->image[i])
 			goto err;
 	}
@@ -4326,7 +4369,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 		ret = g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
 						output->dumb[i]->map,
 						w, h,
-						output->dumb[i]->stride,
+						output->dumb[i]->strides[0],
 						output->dumb[i]->size);
 		if (ret < 0)
 			goto err;

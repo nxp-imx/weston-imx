@@ -222,9 +222,18 @@ AM_CONDITIONAL(ENABLE_DRM_COMPOSITOR, test x$enable_drm_compositor = xyes)
 if test x$enable_drm_compositor = xyes; then
   AC_DEFINE([BUILD_DRM_COMPOSITOR], [1], [Build the DRM compositor])
   PKG_CHECK_MODULES(DRM_COMPOSITOR, [libudev >= 136 libdrm >= 2.4.30 gbm])
+  PKG_CHECK_MODULES(DRM_COMPOSITOR_MODIFIERS, [libdrm >= 2.4.71],
+		    [AC_DEFINE([HAVE_DRM_ADDFB2_MODIFIERS], 1, [libdrm supports modifiers])],
+		    [AC_MSG_WARN([libdrm does not support AddFB2 with modifiers])])
   PKG_CHECK_MODULES(DRM_COMPOSITOR_ATOMIC, [libdrm >= 2.4.78],
 		    [AC_DEFINE([HAVE_DRM_ATOMIC], 1, [libdrm supports atomic API])],
 		    [AC_MSG_WARN([libdrm does not support atomic modesetting, will omit that capability])])
+  PKG_CHECK_MODULES(DRM_COMPOSITOR_FORMATS_BLOB, [libdrm >= 2.4.83],
+		    [AC_DEFINE([HAVE_DRM_FORMATS_BLOB], 1, [libdrm supports modifier advertisement])],
+		    [AC_MSG_WARN([libdrm does not support modifier advertisement])])
+  PKG_CHECK_MODULES(DRM_COMPOSITOR_GBM_MODIFIERS, [gbm >= 17.1],
+		    [AC_DEFINE([HAVE_GBM_MODIFIERS], 1, [GBM supports modifiers])],
+		    [AC_MSG_WARN([GBM does not support modifiers])])
   PKG_CHECK_MODULES(DRM_COMPOSITOR_GBM, [gbm >= 10.2],
 		    [AC_DEFINE([HAVE_GBM_FD_IMPORT], 1, [gbm supports dmabuf import])],
 		    [AC_MSG_WARN([gbm does not support dmabuf import, will omit that capability])])
