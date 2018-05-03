@@ -859,6 +859,9 @@ struct weston_backend {
 	 */
 	void (*repaint_flush)(struct weston_compositor *compositor,
 			      void *repaint_data);
+
+	void (*query_dmabuf_formats)(struct weston_compositor* compositor,
+					int **formats, int *num_formats);
 };
 
 struct weston_desktop_xwayland;
