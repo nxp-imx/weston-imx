@@ -1033,6 +1033,9 @@ struct weston_backend {
 	struct weston_output *
 	(*create_output)(struct weston_compositor *compositor,
 			 const char *name);
+
+	void (*query_dmabuf_formats)(struct weston_compositor* compositor,
+					int **formats, int *num_formats);
 };
 
 /** Callback for saving calibration
