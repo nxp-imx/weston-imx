@@ -107,6 +107,12 @@ struct weston_backend {
 	 */
 	bool (*can_scanout_dmabuf)(struct weston_compositor *compositor,
 				   struct linux_dmabuf_buffer *buffer);
+
+	void (*query_dmabuf_formats)(struct weston_compositor* compositor,
+					int **formats, int *num_formats);
+    void (*query_dmabuf_modifiers)(struct weston_compositor *compositor,
+                    int format, uint64_t **modifiers,
+                    int *num_modifiers);
 };
 
 /* weston_head */
