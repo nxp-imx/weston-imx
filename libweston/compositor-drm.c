@@ -3373,7 +3373,16 @@ drm_assign_planes(struct weston_output *output_base, void *repaint_data)
 					  &ev->transform.boundingbox);
 
 		next_plane = NULL;
-		if (pixman_region32_not_empty(&surface_overlap) || picked_scanout)
+		if (es->buffer_ref.buffer) {
+			struct linux_dmabuf_buffer *dmabuf = NULL;
+			struct weston_buffer *buffer = es->buffer_ref.buffer;
+			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
+			if (dmabuf) {
+				next_plane = drm_output_prepare_overlay_view(state, ev);
+			}
+		}
+
+		if (!next_plane && (pixman_region32_not_empty(&surface_overlap) || picked_scanout))
 			next_plane = primary;
 		if (next_plane == NULL)
 			next_plane = drm_output_prepare_cursor_view(state, ev);
@@ -3614,6 +3623,8 @@ init_kms_caps(struct drm_backend *b)
 			cap = 0;
 		ret = drmSetClientCap(b->drm.fd, DRM_CLIENT_CAP_ATOMIC, 1);
 		b->atomic_modeset = ((ret == 0) && (cap == 1));
+		if (b->atomic_modeset)
+			b->sprites_are_broken = 0;
 	}
 #endif
 	weston_log("DRM: %s atomic modesetting\n",
