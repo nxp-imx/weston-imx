@@ -88,6 +88,8 @@
 #define GBM_BO_USE_CURSOR GBM_BO_USE_CURSOR_64X64
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 #ifdef HAVE_DRM_FORMATS_BLOB
 static inline uint32_t *
 formats_ptr(struct drm_format_modifier_blob *blob)
@@ -307,6 +309,7 @@ enum drm_fb_type {
 	BUFFER_PIXMAN_DUMB, /**< internal Pixman rendering */
 	BUFFER_GBM_SURFACE, /**< internal EGL rendering */
 	BUFFER_CURSOR, /**< internal cursor buffer */
+	BUFFER_DMABUF, /**< dmabuf */
 };
 
 struct drm_fb {
@@ -889,6 +892,7 @@ drm_fb_addfb(struct drm_fb *fb)
 	int ret = -EINVAL;
 #ifdef HAVE_DRM_ADDFB2_MODIFIERS
 	uint64_t mods[4] = { };
+	int width, height;
 	int i;
 #endif
 
@@ -900,7 +904,14 @@ drm_fb_addfb(struct drm_fb *fb)
 #ifdef HAVE_DRM_ADDFB2_MODIFIERS
 		for (i = 0; i < (int) ARRAY_LENGTH(mods) && fb->handles[i]; i++)
 			mods[i] = fb->modifier;
-		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
+			width = ALIGNTO (fb->width, 8);
+			height = ALIGNTO (fb->height, 256);
+		} else {
+			width = fb->width;
+			height = fb->height;
+		}
+		ret = drmModeAddFB2WithModifiers(fb->fd, width, height,
 						 fb->format->format,
 						 fb->handles, fb->strides,
 						 fb->offsets, mods, &fb->fb_id,
@@ -1015,6 +1026,83 @@ drm_fb_ref(struct drm_fb *fb)
 }
 
 static struct drm_fb *
+drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
+		       struct drm_backend *backend, bool is_opaque)
+{
+	int i;
+	struct drm_fb *fb;
+	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
+
+	if (dmabuf->attributes.flags)
+		return NULL;
+
+	fb = zalloc(sizeof *fb);
+	if (fb == NULL)
+		return NULL;
+
+	fb->refcnt = 1;
+	fb->type = BUFFER_DMABUF;
+	fb->width = dmabuf->attributes.width;
+	fb->height = dmabuf->attributes.height;
+	memcpy(fb->strides, dmabuf->attributes.stride, sizeof(fb->strides));
+	memcpy(fb->offsets, dmabuf->attributes.offset, sizeof(fb->offsets));
+	fb->format = pixel_format_get_info(dmabuf->attributes.format);
+	fb->modifier = dmabuf->attributes.modifier[0];
+	fb->size = 0;
+	fb->fd = backend->drm.fd;
+
+	if (!fb->format) {
+		weston_log("couldn't look up format info for 0x%lx\n",
+			   (unsigned long) fb->format);
+		goto err_free;
+	}
+
+	if (is_opaque)
+		fb->format = pixel_format_get_opaque_substitute(fb->format);
+
+	if (backend->min_width > fb->width ||
+	    fb->width > backend->max_width ||
+	    backend->min_height > fb->height ||
+	    fb->height > backend->max_height) {
+		weston_log("bo geometry out of bounds\n");
+		goto err_free;
+	}
+
+	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		int ret;
+		ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
+		if (ret) {
+			weston_log ("got gem_handle %x\n", gem_handle[i]);
+			goto err_free;
+		}
+		fb->handles[i] = gem_handle[i];
+	}
+
+	if (drm_fb_addfb(fb) != 0) {
+		weston_log("failed to create kms fb: %m\n");
+		goto err_free;
+	}
+
+done:
+	if (gem_handle[0] != 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int err;
+			struct drm_gem_close arg = { gem_handle[i], };
+			err = drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
+			if (err)
+				weston_log ("failed to close gem handle\n");
+		}
+	}
+
+	return fb;
+
+err_free:
+	drm_fb_destroy(fb);
+	fb = NULL;
+	goto done;
+}
+
+static struct drm_fb *
 drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 		   uint32_t format, enum drm_fb_type type)
 {
@@ -1089,7 +1177,7 @@ static void
 drm_fb_set_buffer(struct drm_fb *fb, struct weston_buffer *buffer)
 {
 	assert(fb->buffer_ref.buffer == NULL);
-	assert(fb->type == BUFFER_CLIENT);
+	assert(fb->type == BUFFER_CLIENT || fb->type == BUFFER_DMABUF);
 	weston_buffer_reference(&fb->buffer_ref, buffer);
 }
 
@@ -1113,6 +1201,9 @@ drm_fb_unref(struct drm_fb *fb)
 		break;
 	case BUFFER_GBM_SURFACE:
 		gbm_surface_release_buffer(fb->gbm_surface, fb->bo);
+		break;
+	case BUFFER_DMABUF:
+		drm_fb_destroy(fb);
 		break;
 	default:
 		assert(NULL);
@@ -2813,6 +2904,28 @@ drm_output_check_plane_format(struct drm_plane *p,
 	return 0;
 }
 
+static bool
+drm_view_is_opaque(struct weston_view *ev)
+{
+	pixman_region32_t r;
+	bool ret = false;
+
+	/* We can scanout an ARGB buffer if the surface's
+	 * opaque region covers the whole output, but we have
+	 * to use XRGB as the KMS format code. */
+	pixman_region32_init_rect(&r, 0, 0,
+				  ev->surface->width,
+				  ev->surface->height);
+	pixman_region32_subtract(&r, &r, &ev->surface->opaque);
+
+	if (!pixman_region32_not_empty(&r))
+		ret = true;
+
+	pixman_region32_fini(&r);
+
+	return ret;
+}
+
 static struct weston_plane *
 drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 				struct weston_view *ev)
@@ -2826,6 +2939,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	struct drm_plane_state *state = NULL;
 	struct linux_dmabuf_buffer *dmabuf;
 	struct gbm_bo *bo;
+	bool is_opaque = drm_view_is_opaque(ev);
 	pixman_region32_t dest_rect, src_rect;
 	pixman_box32_t *box, tbox;
 	uint32_t format;
@@ -2879,6 +2993,9 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 		return NULL;
 
 	if ((dmabuf = linux_dmabuf_buffer_get(buffer_resource))) {
+		state->fb = drm_fb_get_from_dmabuf (dmabuf, b, is_opaque);
+		if (state->fb)
+			goto set_buffer;
 #ifdef HAVE_GBM_FD_IMPORT
 		/* XXX: TODO:
 		 *
@@ -2929,6 +3046,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	if (!state->fb)
 		goto err;
 
+set_buffer:
 	drm_fb_set_buffer(state->fb, ev->surface->buffer_ref.buffer);
 
 	state->output = output;
