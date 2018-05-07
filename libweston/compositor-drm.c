@@ -3378,7 +3378,11 @@ drm_assign_planes(struct weston_output *output_base, void *repaint_data)
 			struct weston_buffer *buffer = es->buffer_ref.buffer;
 			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
 			if (dmabuf) {
-				next_plane = drm_output_prepare_overlay_view(state, ev);
+				if (dmabuf->attributes.format == DRM_FORMAT_NV12
+				|| dmabuf->attributes.format == DRM_FORMAT_P010)
+					next_plane = drm_output_prepare_overlay_view(state, ev);
+				else
+					next_plane = primary;
 			}
 		}
 
