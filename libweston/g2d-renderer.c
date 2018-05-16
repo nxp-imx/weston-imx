@@ -223,6 +223,59 @@ calculate_edges(struct weston_view *ev, pixman_box32_t *rect,
 	return n;
 }
 
+static void
+calculate_rect_with_transform(int surfaceWidth, int surfaceHeight,
+			      uint32_t transform, g2dRECT *rect)
+{
+	g2dRECT tmp = *rect;
+
+	switch (transform) {
+	case WL_OUTPUT_TRANSFORM_NORMAL:
+	default:
+		break;
+	case WL_OUTPUT_TRANSFORM_90:
+		rect->right = surfaceWidth - tmp.top;
+		rect->left = rect->right - (tmp.bottom - tmp.top);
+		rect->top = tmp.left;
+		rect->bottom = rect->top + (tmp.right - tmp.left);
+		break;
+	case WL_OUTPUT_TRANSFORM_270:
+		rect->left = tmp.top;
+		rect->right = rect->left + (tmp.bottom - tmp.top);
+		rect->bottom = surfaceHeight - tmp.left;
+		rect->top = rect->bottom - (tmp.right - tmp.left);
+		break;
+	case WL_OUTPUT_TRANSFORM_180:
+		rect->left = surfaceWidth - tmp.right;
+		rect->right = rect->left + (tmp.right - tmp.left);
+		rect->bottom = surfaceHeight - tmp.top;
+		rect->top = rect->bottom - (tmp.bottom - tmp.top);
+		break;
+	}
+}
+
+static enum g2d_rotation
+convert_transform_to_rot(uint32_t transform)
+{
+	enum g2d_rotation rot;
+	switch(transform) {
+	case WL_OUTPUT_TRANSFORM_NORMAL:
+	default:
+		rot = G2D_ROTATION_0;
+		break;
+	case WL_OUTPUT_TRANSFORM_90:
+		/*For source rotation*/
+		rot = G2D_ROTATION_270;
+		break;
+	case WL_OUTPUT_TRANSFORM_270:
+		rot = G2D_ROTATION_90;
+		break;
+	case WL_OUTPUT_TRANSFORM_180:
+		rot = G2D_ROTATION_180;
+		break;
+	}
+	return rot;
+}
 
 static inline struct g2d_output_state *
 get_output_state(struct weston_output *output)
@@ -513,6 +566,104 @@ use_output(struct weston_output *output)
 	}
 }
 
+static void
+g2d_clip_rects(enum wl_output_transform transform,
+			g2dRECT *srcRect,
+			g2dRECT *dstrect,
+			int dstWidth,
+			int dstHeight)
+{
+	switch (transform) {
+	case WL_OUTPUT_TRANSFORM_NORMAL:
+		if(dstrect->left < 0)
+		{
+			srcRect->left -= dstrect->left;
+			dstrect->left = 0;
+			if(srcRect->left >= srcRect->right)
+				return;
+		}
+		if(dstrect->right > dstWidth)
+		{
+			srcRect->right -= (dstrect->right - dstWidth);
+			dstrect->right = dstWidth;
+			if(srcRect->right <= srcRect->left)
+				return;
+		}
+		if(dstrect->bottom > dstHeight)
+		{
+			dstrect->bottom = dstHeight;
+			srcRect->bottom = srcRect->top + dstrect->bottom - dstrect->top;
+			if(srcRect->bottom < 0)
+				return;
+		}
+		break;
+	case WL_OUTPUT_TRANSFORM_90:
+		if(dstrect->left < 0)
+		{
+			srcRect->bottom += dstrect->left;
+			dstrect->left = 0;
+			if(srcRect->top >= srcRect->bottom)
+					return;
+		}
+		if(dstrect->bottom > dstHeight)
+		{
+			dstrect->bottom = dstHeight;
+			srcRect->right = srcRect->left + dstrect->bottom- dstrect->top;
+			if(srcRect->right < 0)
+				return;
+		}
+		if(dstrect->top < 0)
+		{
+			srcRect->left -= dstrect->top;
+			dstrect->top = 0;
+			if(srcRect->left > srcRect->right)
+				return;
+		}
+		break;
+	case WL_OUTPUT_TRANSFORM_270:
+		if(dstrect->left < 0)
+		{
+			srcRect->top += dstrect->left;
+			dstrect->left = 0;
+			if(srcRect->top >= srcRect->bottom)
+					return;
+		}
+		if(dstrect->top < 0)
+		{
+			srcRect->right += dstrect->top;
+			dstrect->top = 0;
+			if(srcRect->left >= srcRect->right)
+				return;
+		}
+		if(dstrect->bottom > dstHeight)
+		{
+			srcRect->left += (dstrect->bottom - dstHeight);
+			dstrect->bottom = dstHeight;
+			if(srcRect->right <= srcRect->left)
+				return;
+		}
+		break;
+	case WL_OUTPUT_TRANSFORM_180:
+		if(dstrect->left < 0)
+		{
+			srcRect->right += dstrect->left;
+			dstrect->left = 0;
+			if(srcRect->left >= srcRect->right)
+					return;
+		}
+		if(dstrect->top < 0)
+		{
+			srcRect->bottom += dstrect->top;
+			dstrect->top = 0;
+			if(srcRect->top >= srcRect->bottom)
+				return;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
 static int
 g2d_renderer_read_pixels(struct weston_output *output,
 			       pixman_format_code_t format, void *pixels,
@@ -541,6 +692,7 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	g2dRECT clipRect = {0};
 	int dstWidth = 0;
 	int dstHeight = 0;
+	int clipRects = 1;
 	struct g2d_surfaceEx *dstsurface;
 
 	bb_rects = pixman_region32_rectangles(&ev->transform.boundingbox, &nbb);
@@ -584,26 +736,48 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 		dstrect.left = dstrect.left - output->x;
 		dstrect.right = dstrect.right - output->x;
 	}
-	if(dstrect.left < 0)
-	{
-		srcRect.left -= dstrect.left;
-		dstrect.left = 0;
-		if(srcRect.left > ev->surface->width)
-			return;
+	switch (output->transform) {
+	case WL_OUTPUT_TRANSFORM_NORMAL:
+		break;
+	case WL_OUTPUT_TRANSFORM_90:
+	case WL_OUTPUT_TRANSFORM_270:
+		if (gs->g2d_surface.base.width == ev->surface->height &&
+		    gs->g2d_surface.base.height == ev->surface->width &&
+		    gs->g2d_surface.base.width != gs->g2d_surface.base.height)
+		{
+			/*Skip the backgroud and panel rotation*/
+			calculate_rect_with_transform(gs->g2d_surface.base.width,
+						      gs->g2d_surface.base.height,
+						      output->transform,
+						      &srcRect);
+			clipRects = 0;
+		}
+
+		break;
+	case WL_OUTPUT_TRANSFORM_180:
+		if ((gs->g2d_surface.base.height == 32 &&
+		     gs->g2d_surface.base.width == dstsurface->base.width))
+		{
+			/*Skip the backgroud and panel rotation*/
+			calculate_rect_with_transform(gs->g2d_surface.base.width,
+						      gs->g2d_surface.base.height,
+						      output->transform,
+						      &srcRect);
+			clipRects = 0;
+		}
+		break;
+	default:
+		break;
 	}
-	if(dstrect.right > dstWidth)
+
+	calculate_rect_with_transform(dstsurface->base.width,
+				      dstsurface->base.height,
+				      output->transform, &dstrect);
+
+	if(clipRects)
 	{
-		dstrect.right = dstWidth;
-		srcRect.right = srcRect.left + dstrect.right - dstrect.left;
-		if(srcRect.right > ev->surface->width)
-			return;
-	}
-	if(dstrect.bottom > dstHeight)
-	{
-		dstrect.bottom = dstHeight;
-		srcRect.bottom = srcRect.top + dstrect.bottom - dstrect.top;
-		if(srcRect.bottom < 0)
-			return;
+		g2d_clip_rects(output->transform, &srcRect, &dstrect, dstWidth, dstHeight);
+		gs->g2d_surface.base.rot = convert_transform_to_rot(output->transform);
 	}
 
 	for (i = 0; i < nrects; i++)
@@ -641,6 +815,11 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 				clipRect.left = clipRect.left - output->x;
 				clipRect.right = clipRect.right - output->x;
 			}
+			/* Need compute the clip rect with transform */
+			calculate_rect_with_transform(dstsurface->base.width,
+						      dstsurface->base.height,
+						      output->transform, &clipRect);
+
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
 			g2d_blit_surface(gr->handle, &gs->g2d_surface, dstsurface, &srcRect, &dstrect);
 		}
