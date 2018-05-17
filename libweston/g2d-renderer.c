@@ -2,6 +2,7 @@
  * Copyright (c) 2016 Freescale Semiconductor, Inc.
  * Copyright © 2012 Intel Corporation
  * Copyright © 2015 Collabora, Ltd.
+ * Copyright 2018 NXP
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -38,11 +39,14 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <HAL/gc_hal.h>
+#include <drm_fourcc.h>
 
 #include "compositor.h"
 #include "g2d-renderer.h"
 #include "vertex-clipping.h"
 #include "shared/helpers.h"
+#include "linux-dmabuf.h"
+#include "linux-dmabuf-unstable-v1-server-protocol.h"
 
 #define BUFFER_DAMAGE_COUNT 3
 #define ALIGN_WIDTH(a) (((a) + 15) & ~15)
@@ -110,6 +114,7 @@ struct g2d_surface_state {
 	pixman_region32_t texture_damage;
 	struct g2d_surfaceEx g2d_surface;
 	struct g2d_buf *shm_buf;
+	struct g2d_buf *dma_buf;
 	int shm_buf_length;
 	int bpp;
 
@@ -1082,11 +1087,155 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer,
 	gs->g2d_surface.base.format = g2dFormat;
 }
 
+
+static void
+g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
+			enum g2d_format *g2dFormat)
+{
+	switch (dmaformat) {
+		case DRM_FORMAT_ARGB8888:
+			*g2dFormat = G2D_BGRA8888;
+			break;
+		case DRM_FORMAT_XRGB8888:
+			*g2dFormat = G2D_BGRX8888;
+			break;
+		case DRM_FORMAT_RGB565:
+			*g2dFormat = G2D_RGB565;
+			break;
+		case DRM_FORMAT_YUYV:
+			*g2dFormat = G2D_YUYV;
+			break;
+		case DRM_FORMAT_NV12:
+			*g2dFormat = G2D_NV12;
+			break;
+		case DRM_FORMAT_YUV420:
+			*g2dFormat = G2D_I420;
+			break;
+		default:
+			*g2dFormat = -1;
+			weston_log("warning: unknown dmabuf buffer format: %08x\n", dmaformat);
+			break;
+	}
+}
+
+static void
+g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buffer,
+			struct linux_dmabuf_buffer *dmabuf)
+{
+	struct g2d_surface_state *gs = get_surface_state(es);
+	int alignedWidth = 0;
+	enum g2d_format g2dFormat;
+	gctUINT32 paddr = 0;
+	buffer->width = dmabuf->attributes.width;
+	buffer->height = dmabuf->attributes.height;
+	alignedWidth = ALIGN_WIDTH(buffer->width);
+
+	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
+
+	if (g2dFormat < 0)
+		return;
+
+	if(gs->dma_buf)
+		g2d_free(gs->dma_buf);
+	gs->dma_buf = g2d_buf_from_fd(dmabuf->attributes.fd[0]);
+
+	paddr = gs->dma_buf->buf_paddr;
+	switch(g2dFormat){
+		case G2D_I420:
+			gs->g2d_surface.base.planes[0] = paddr;
+			gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * buffer->height;
+			gs->g2d_surface.base.planes[2] = gs->g2d_surface.base.planes[1] + alignedWidth * buffer->height / 4;
+			break;
+		case G2D_NV12:
+			gs->g2d_surface.base.planes[0] = paddr;
+			gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * buffer->height;
+			break;
+		case G2D_YUYV:
+		case G2D_RGB565:
+		case G2D_BGRX8888:
+		case G2D_BGRA8888:
+			gs->g2d_surface.base.planes[0] = paddr;
+			break;
+		default:
+			weston_log("G2D render not support format!\n");
+			g2d_free(gs->dma_buf);
+			gs->dma_buf = NULL;
+			return;
+	}
+
+	gs->g2d_surface.base.left = 0;
+	gs->g2d_surface.base.top  = 0;
+	gs->g2d_surface.base.right  = buffer->width;
+	gs->g2d_surface.base.bottom = buffer->height;
+	gs->g2d_surface.base.stride = alignedWidth;
+	gs->g2d_surface.base.width  = buffer->width;
+	gs->g2d_surface.base.height = buffer->height;
+	gs->g2d_surface.base.rot    = G2D_ROTATION_0;
+	gs->g2d_surface.tiling = G2D_LINEAR;
+	gs->g2d_surface.base.format = g2dFormat;
+}
+
+static void
+g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
+			int **formats, int *num_formats)
+{
+	int num;
+	static const int dma_formats[] = {
+		DRM_FORMAT_ARGB8888,
+		DRM_FORMAT_XRGB8888,
+		DRM_FORMAT_RGB565,
+		DRM_FORMAT_YUYV,
+		DRM_FORMAT_NV12,
+		DRM_FORMAT_YUV420,
+	};
+
+	num = ARRAY_LENGTH(dma_formats);
+	*formats = calloc(*num_formats, sizeof(int));
+	memcpy(*formats, dma_formats, num * sizeof(int));
+
+	*num_formats = num;
+}
+
+static void
+g2d_renderer_query_dmabuf_modifiers(struct weston_compositor *wc, int format,
+			uint64_t **modifiers,
+			int *num_modifiers)
+{
+	*num_modifiers = 1;
+	*modifiers = calloc(*num_modifiers, sizeof(uint64_t));
+	(*modifiers)[0] = DRM_FORMAT_MOD_LINEAR;
+}
+
+static bool
+g2d_renderer_import_dmabuf(struct weston_compositor *wc,
+			struct linux_dmabuf_buffer *dmabuf)
+{
+	struct g2d_buf *g2dBuf = NULL;
+	enum g2d_format g2dFormat;
+
+	if (!dmabuf)
+		return false;
+
+	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
+	if (g2dFormat < 0)
+		return false;
+
+	g2dBuf = g2d_buf_from_fd(dmabuf->attributes.fd[0]);
+
+	if(!g2dBuf)
+		return false;
+	else
+		g2d_free(g2dBuf);
+
+	return true;
+}
+
 static void
 g2d_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 {
 	struct g2d_surface_state *gs = get_surface_state(es);
 	struct wl_shm_buffer *shm_buffer;
+	struct linux_dmabuf_buffer *dmabuf;
 	weston_buffer_reference(&gs->buffer_ref, buffer);
 
 	if(buffer==NULL)
@@ -1097,6 +1246,10 @@ g2d_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 	if(shm_buffer)
 	{
 		g2d_renderer_attach_shm(es, buffer, shm_buffer);
+	}
+	else if ((dmabuf = linux_dmabuf_buffer_get(buffer->resource)))
+	{
+		g2d_renderer_attach_dmabuf(es, buffer, dmabuf);
 	}
 	else
 	{
@@ -1117,6 +1270,11 @@ surface_state_destroy(struct g2d_surface_state *gs, struct g2d_renderer *gr)
 	{
 		g2d_free(gs->shm_buf);
 		gs->shm_buf = NULL;
+	}
+	if(gs->dma_buf)
+	{
+		g2d_free(gs->dma_buf);
+		gs->dma_buf = NULL;
 	}
 
 	weston_buffer_reference(&gs->buffer_ref, NULL);
@@ -1294,6 +1452,9 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.attach = g2d_renderer_attach;
 	gr->base.surface_set_color = g2d_renderer_surface_set_color;
 	gr->base.destroy = g2d_renderer_destroy;
+	gr->base.import_dmabuf = g2d_renderer_import_dmabuf;
+	gr->base.query_dmabuf_formats = g2d_renderer_query_dmabuf_formats;
+	gr->base.query_dmabuf_modifiers = g2d_renderer_query_dmabuf_modifiers;
 #ifdef ENABLE_EGL
 	gr->bind_display =
 		(void *) eglGetProcAddress("eglBindWaylandDisplayWL");
@@ -1312,6 +1473,12 @@ g2d_renderer_create(struct weston_compositor *ec)
 	}
 	ec->renderer = &gr->base;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
+
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV12);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
+
 	wl_signal_init(&gr->destroy_signal);
 
 	/* create use-g2d-renderer */

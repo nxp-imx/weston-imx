@@ -335,6 +335,7 @@ g2d_renderer_la_LIBADD = 			\
 	-lg2d
 g2d_renderer_la_CFLAGS =			\
 	$(COMPOSITOR_CFLAGS)			\
+	$(LIBDRM_CFLAGS)			\
 	$(EGL_CFLAGS)				\
 	$(GCC_CFLAGS) -DHAVE_G2D
 g2d_renderer_la_SOURCES =			\
