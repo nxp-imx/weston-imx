@@ -1284,7 +1284,7 @@ static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
-	gr = malloc(sizeof *gr);
+	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
 		return -1;
 
