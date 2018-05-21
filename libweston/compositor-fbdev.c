@@ -57,6 +57,8 @@
 #ifdef ENABLE_IMXG2D
 #include "g2d-renderer.h"
 #endif
+#include "linux-dmabuf.h"
+#include "linux-dmabuf-unstable-v1-server-protocol.h"
 
 struct fbdev_backend {
 	struct weston_backend base;
@@ -927,6 +929,12 @@ fbdev_backend_create(struct weston_compositor *compositor,
 #endif
 		if (fbdev_output_create(backend, 0, 0, param->device) < 0)
 			goto out_launcher;
+
+	if (compositor->renderer->import_dmabuf) {
+		if (linux_dmabuf_setup(compositor) < 0)
+			weston_log("Error: initializing dmabuf "
+				   "support failed.\n");
+	}
 
 	udev_input_init(&backend->input, compositor, backend->udev,
 			seat_id, param->configure_device);
