@@ -709,10 +709,10 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 
 	rects = pixman_region32_rectangles(region, &nrects);
 	surf_rects = pixman_region32_rectangles(surf_region, &nsurf);
-	srcRect.left = ev->geometry.x < 0.0 ? g2d_int_from_double(fabsf(ev->geometry.x)) : 0;
-	srcRect.top  = ev->geometry.y < 0.0 ? g2d_int_from_double(fabsf(ev->geometry.y)) : 0;
-	srcRect.right  = ev->surface->width;
-	srcRect.bottom = ev->surface->height;
+	srcRect.left = gs->g2d_surface.base.left;
+	srcRect.top  = gs->g2d_surface.base.top;
+	srcRect.right  = gs->g2d_surface.base.right;
+	srcRect.bottom = gs->g2d_surface.base.bottom;
 	if(go->drm_hw_buffer && gr->use_drm)
 	{
 		dstsurface = go->drm_hw_buffer;
