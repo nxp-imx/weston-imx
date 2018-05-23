@@ -49,7 +49,7 @@
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 
 #define BUFFER_DAMAGE_COUNT 3
-#define ALIGN_WIDTH(a) (((a) + 15) & ~15)
+#define ALIGN_TO_16(a) (((a) + 15) & ~15)
 
 static PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
 
@@ -954,6 +954,91 @@ g2d_renderer_attach_egl(struct weston_surface *es, struct weston_buffer *buffer)
 }
 
 static void
+g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer *buffer)
+{
+	int alignedWidth = ALIGN_TO_16(buffer->width);
+	int height = 0;
+	uint8_t *src = wl_shm_buffer_get_data(buffer->shm_buffer);
+	uint8_t *dst = gs->shm_buf->buf_vaddr;
+	int bpp = gs->bpp;
+	int plane_size[3] = {0,};
+	int src_plane_offset[3] = {0,};
+	int dst_plane_offset[3] = {0,};
+	int uv_src_stride = 0;
+	int uv_dst_stride = 0;
+	int n_planes = 0;
+	int i, j;
+
+	switch (wl_shm_buffer_get_format(buffer->shm_buffer)) {
+		case WL_SHM_FORMAT_XRGB8888:
+		case WL_SHM_FORMAT_ARGB8888:
+		case WL_SHM_FORMAT_RGB565:
+			n_planes = 1;
+			height = buffer->height;
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			break;
+		case WL_SHM_FORMAT_YUYV:
+			n_planes = 1;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			break;
+		case WL_SHM_FORMAT_NV12:
+			n_planes = 2;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			plane_size[1] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height / 2;
+			src_plane_offset[1] = plane_size[0];
+			dst_plane_offset[1] = alignedWidth * height;
+			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
+			uv_dst_stride = alignedWidth;
+			break;
+		case WL_SHM_FORMAT_YUV420:
+			n_planes = 3;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			plane_size[1] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height / 4;
+			plane_size[2] = plane_size[1];
+			src_plane_offset[1] = plane_size[0];
+			src_plane_offset[2] = plane_size[0] + plane_size[1];
+			dst_plane_offset[1] = alignedWidth * height;
+			dst_plane_offset[2] = dst_plane_offset[1] + alignedWidth * height / 4;
+			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer) / 2;
+			uv_dst_stride = alignedWidth / 2;
+			break;
+		default:
+			weston_log("warning: copy shm buffer meet unknown format: %08x\n",
+				   wl_shm_buffer_get_format(buffer->shm_buffer));
+			return;
+	}
+
+	wl_shm_buffer_begin_access(buffer->shm_buffer);
+	if(alignedWidth == buffer->width && height == buffer->height)
+	{
+		for (i = 0; i < n_planes; i++)
+			memcpy (dst + dst_plane_offset[i], src + src_plane_offset[i], plane_size[i]);
+	}
+	else
+	{
+		int src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
+		int dst_stride = alignedWidth * bpp;
+		/* copy the 1st plane */
+		for (i = 0; i < buffer->height; i++)
+		{
+			memcpy(dst + dst_plane_offset[0] + dst_stride * i, src + src_plane_offset[0] + src_stride * i, src_stride);
+		}
+		/* copy the rest plane */
+		for (i = 1; i < n_planes; i++)
+		{
+			for (j = 0; j < buffer->height / 2; j++)
+			{
+				memcpy(dst + dst_plane_offset[i] + uv_dst_stride * j, src + src_plane_offset[i] + uv_src_stride * j, uv_src_stride);
+			}
+		}
+	}
+	wl_shm_buffer_end_access(buffer->shm_buffer);
+}
+
+static void
 g2d_renderer_flush_damage(struct weston_surface *surface)
 {
 	struct g2d_surface_state *gs = get_surface_state(surface);
@@ -981,37 +1066,7 @@ g2d_renderer_flush_damage(struct weston_surface *surface)
 
 	if(wl_shm_buffer_get(buffer->resource))
 	{
-		uint8_t *src = wl_shm_buffer_get_data(buffer->shm_buffer);
-		uint8_t *dst = gs->shm_buf->buf_vaddr;
-		int bpp      = gs->bpp;
-		wl_shm_buffer_begin_access(buffer->shm_buffer);
-		if(gs->shm_buf)
-		{
-			int alignedWidth = ALIGN_WIDTH(buffer->width);
-			if(alignedWidth == buffer->width)
-			{
-				int size = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
-				memcpy(dst, src, size);
-			}
-			else
-			{
-				int i, j;
-				for (i = 0; i < buffer->height; i++)
-				{
-					for (j = 0; j < buffer->width; j++)
-					{
-						int dstOff = i * alignedWidth + j;
-						int srcOff = (i * buffer->width + j);
-						memcpy(dst + dstOff * bpp, src + srcOff * bpp, bpp);
-					}
-				}
-			}
-		}
-		else
-		{
-			weston_log("Error: This shm buffer was not attached\n");
-		}
-		wl_shm_buffer_end_access(buffer->shm_buffer);
+		g2d_renderer_copy_shm_buffer(gs, buffer);
 	}
 	else
 	{
@@ -1033,11 +1088,12 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer,
 	int buffer_length = 0;
 	int alloc_new_buff = 1;
 	int alignedWidth = 0;
+	int height = 0;
 	enum g2d_format g2dFormat = 0;
 	buffer->shm_buffer = shm_buffer;
 	buffer->width = wl_shm_buffer_get_width(shm_buffer);
 	buffer->height = wl_shm_buffer_get_height(shm_buffer);
-	alignedWidth = ALIGN_WIDTH(buffer->width);
+	alignedWidth = ALIGN_TO_16(buffer->width);
 
 	switch (wl_shm_buffer_get_format(shm_buffer)) {
 	case WL_SHM_FORMAT_XRGB8888:
@@ -1052,13 +1108,35 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer,
 		g2dFormat = G2D_RGB565;
 		gs->bpp = 2;
 		break;
+	case WL_SHM_FORMAT_YUYV:
+		g2dFormat = G2D_YUYV;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 2;
+		gs->bpp = 2;
+		break;
+	case WL_SHM_FORMAT_YUV420:
+		g2dFormat = G2D_I420;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3/2;
+		gs->bpp = 1;
+		break;
+	case WL_SHM_FORMAT_NV12:
+		g2dFormat = G2D_NV12;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3/2;
+		gs->bpp = 1;
+		break;
 	default:
 		weston_log("warning: unknown shm buffer format: %08x\n",
 			   wl_shm_buffer_get_format(shm_buffer));
 		return;
 	}
 
-	buffer_length = alignedWidth * buffer->height * gs->bpp;
+	if (height == 0)
+		height = buffer->height;
+
+	if (buffer_length == 0)
+		buffer_length = alignedWidth * buffer->height * gs->bpp;
 
 	/* Only allocate a new g2d buff if it is larger than existing one.*/
 	gs->shm_buf_length = buffer_length;
@@ -1073,14 +1151,17 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer,
 			g2d_free(gs->shm_buf);
 		gs->shm_buf = g2d_alloc(buffer_length, 0);
 		gs->g2d_surface.base.planes[0] = gs->shm_buf->buf_paddr;
+		gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * height;
+		gs->g2d_surface.base.planes[2] = gs->g2d_surface.base.planes[1] + alignedWidth * height / 4;
 	}
+
 	gs->g2d_surface.base.left = 0;
 	gs->g2d_surface.base.top  = 0;
 	gs->g2d_surface.base.right  = buffer->width;
-	gs->g2d_surface.base.bottom = buffer->height;
+	gs->g2d_surface.base.bottom = height;
 	gs->g2d_surface.base.stride = alignedWidth;
 	gs->g2d_surface.base.width  = buffer->width;
-	gs->g2d_surface.base.height = buffer->height;
+	gs->g2d_surface.base.height = height;
 	gs->g2d_surface.base.rot    = G2D_ROTATION_0;
 	gs->g2d_surface.base.clrcolor = 0xFF400000;
 	gs->g2d_surface.tiling = G2D_LINEAR;
@@ -1128,7 +1209,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gctUINT32 paddr = 0;
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
-	alignedWidth = ALIGN_WIDTH(buffer->width);
+	alignedWidth = ALIGN_TO_16(buffer->width);
 
 	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
 
