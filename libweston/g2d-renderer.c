@@ -32,6 +32,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <float.h>
+#include <math.h>
 #include <assert.h>
 #include <pthread.h>
 #include <linux/fb.h>
@@ -578,26 +579,49 @@ g2d_clip_rects(enum wl_output_transform transform,
 			int dstWidth,
 			int dstHeight)
 {
+	int srcWidth = srcRect->right - srcRect->left;
+	int srcHeight = srcRect->bottom - srcRect->top;
+	float scale_v = 1.0f;
+	float scale_h = 1.0f;
+
+	if(transform == WL_OUTPUT_TRANSFORM_90
+		|| transform == WL_OUTPUT_TRANSFORM_270)
+	{
+		scale_h = (float)srcHeight / (dstrect->right - dstrect->left);
+		scale_v = (float)srcWidth / (dstrect->bottom - dstrect->top);
+	}
+	else
+	{
+		scale_h = (float)srcWidth / (dstrect->right - dstrect->left);
+		scale_v = (float)srcHeight / (dstrect->bottom - dstrect->top);
+	}
 	switch (transform) {
 	case WL_OUTPUT_TRANSFORM_NORMAL:
 		if(dstrect->left < 0)
 		{
-			srcRect->left -= dstrect->left;
+			srcRect->left += floorf((float)(-dstrect->left) * scale_h);
 			dstrect->left = 0;
 			if(srcRect->left >= srcRect->right)
 				return;
 		}
 		if(dstrect->right > dstWidth)
 		{
-			srcRect->right -= (dstrect->right - dstWidth);
+			srcRect->right -= floorf((float)(dstrect->right - dstWidth) * scale_h);
 			dstrect->right = dstWidth;
 			if(srcRect->right <= srcRect->left)
 				return;
 		}
+		if(dstrect->top < 0)
+		{
+			srcRect->top += floorf((float)(-dstrect->top) * scale_v);
+			dstrect->top = 0;
+			if(srcRect->top <= srcRect->bottom)
+				return;
+		}
 		if(dstrect->bottom > dstHeight)
 		{
+			srcRect->bottom -= floorf((float)(dstrect->bottom - dstHeight) * scale_v);
 			dstrect->bottom = dstHeight;
-			srcRect->bottom = srcRect->top + dstrect->bottom - dstrect->top;
 			if(srcRect->bottom < 0)
 				return;
 		}
@@ -605,21 +629,21 @@ g2d_clip_rects(enum wl_output_transform transform,
 	case WL_OUTPUT_TRANSFORM_90:
 		if(dstrect->left < 0)
 		{
-			srcRect->bottom += dstrect->left;
+			srcRect->bottom -= floorf((float)(-dstrect->left) * scale_h);
 			dstrect->left = 0;
 			if(srcRect->top >= srcRect->bottom)
 					return;
 		}
 		if(dstrect->bottom > dstHeight)
 		{
+			srcRect->right -= floorf((float)(dstrect->bottom - dstHeight) * scale_v);
 			dstrect->bottom = dstHeight;
-			srcRect->right = srcRect->left + dstrect->bottom- dstrect->top;
 			if(srcRect->right < 0)
 				return;
 		}
 		if(dstrect->top < 0)
 		{
-			srcRect->left -= dstrect->top;
+			srcRect->left += floorf((float)(-dstrect->top) * scale_h);
 			dstrect->top = 0;
 			if(srcRect->left > srcRect->right)
 				return;
@@ -628,37 +652,51 @@ g2d_clip_rects(enum wl_output_transform transform,
 	case WL_OUTPUT_TRANSFORM_270:
 		if(dstrect->left < 0)
 		{
-			srcRect->top += dstrect->left;
+			srcRect->top += floorf((float)(-dstrect->left) * scale_h);
 			dstrect->left = 0;
 			if(srcRect->top >= srcRect->bottom)
 					return;
 		}
 		if(dstrect->top < 0)
 		{
-			srcRect->right += dstrect->top;
+			srcRect->right -= floorf((float)(-dstrect->top) * scale_v);
 			dstrect->top = 0;
 			if(srcRect->left >= srcRect->right)
 				return;
 		}
 		if(dstrect->bottom > dstHeight)
 		{
-			srcRect->left += (dstrect->bottom - dstHeight);
+			srcRect->left += floorf((float)(dstrect->bottom - dstHeight) * scale_v);
 			dstrect->bottom = dstHeight;
 			if(srcRect->right <= srcRect->left)
+				return;
+		}
+		if(dstrect->right > dstWidth)
+		{
+			srcRect->bottom -= floorf((float)(dstrect->right - dstWidth) * scale_h);
+			dstrect->right = dstWidth;
+			if(srcRect->bottom <= srcRect->top)
 				return;
 		}
 		break;
 	case WL_OUTPUT_TRANSFORM_180:
 		if(dstrect->left < 0)
 		{
-			srcRect->right += dstrect->left;
+			srcRect->right -= floorf((float)(-dstrect->left) * scale_h);
 			dstrect->left = 0;
 			if(srcRect->left >= srcRect->right)
 					return;
 		}
+		if(dstrect->right > dstWidth)
+		{
+			srcRect->left += floorf((float)(dstrect->right - dstWidth) * scale_h);
+			dstrect->right = dstWidth;
+			if(srcRect->right <= srcRect->left)
+				return;
+		}
 		if(dstrect->top < 0)
 		{
-			srcRect->bottom += dstrect->top;
+			srcRect->bottom -= floorf((float)(-dstrect->top) * scale_v);
 			dstrect->top = 0;
 			if(srcRect->top >= srcRect->bottom)
 				return;
@@ -697,8 +735,8 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	g2dRECT clipRect = {0};
 	int dstWidth = 0;
 	int dstHeight = 0;
-	int clipRects = 1;
 	struct g2d_surfaceEx *dstsurface;
+	uint32_t view_transform = ev->surface->buffer_viewport.buffer.transform;
 
 	bb_rects = pixman_region32_rectangles(&ev->transform.boundingbox, &nbb);
 
@@ -709,10 +747,10 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 
 	rects = pixman_region32_rectangles(region, &nrects);
 	surf_rects = pixman_region32_rectangles(surf_region, &nsurf);
-	srcRect.left = gs->g2d_surface.base.left;
-	srcRect.top  = gs->g2d_surface.base.top;
-	srcRect.right  = gs->g2d_surface.base.right;
-	srcRect.bottom = gs->g2d_surface.base.bottom;
+	srcRect.left = 0;
+	srcRect.top  = 0;
+	srcRect.right  = gs->g2d_surface.base.width;
+	srcRect.bottom = gs->g2d_surface.base.height;
 	if(go->drm_hw_buffer && gr->use_drm)
 	{
 		dstsurface = go->drm_hw_buffer;
@@ -731,8 +769,8 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	dstWidth  = dstsurface->base.width;
 	dstHeight = dstsurface->base.height;
 	/*Calculate the destrect once for all*/
-	dstrect.left = (bb_rects[0].x1 < 0) ? 0 : bb_rects[0].x1; /*Clip dstrect.left to 0 if boundingbox.x1 is < 0 */
-	dstrect.top = (bb_rects[0].y1 < 0) ? 0 : bb_rects[0].y1; /*Clip dstrect.top to 0 if boundingbox.y1 is < 0 */
+	dstrect.left = bb_rects[0].x1;
+	dstrect.top = bb_rects[0].y1;
 	dstrect.right = bb_rects[0].x2;
 	dstrect.bottom = bb_rects[0].y2;
 	/*Multi display support*/
@@ -741,48 +779,19 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 		dstrect.left = dstrect.left - output->x;
 		dstrect.right = dstrect.right - output->x;
 	}
-	switch (output->transform) {
-	case WL_OUTPUT_TRANSFORM_NORMAL:
-		break;
-	case WL_OUTPUT_TRANSFORM_90:
-	case WL_OUTPUT_TRANSFORM_270:
-		if (gs->g2d_surface.base.width == ev->surface->height &&
-		    gs->g2d_surface.base.height == ev->surface->width &&
-		    gs->g2d_surface.base.width != gs->g2d_surface.base.height)
-		{
-			/*Skip the backgroud and panel rotation*/
-			calculate_rect_with_transform(gs->g2d_surface.base.width,
-						      gs->g2d_surface.base.height,
-						      output->transform,
-						      &srcRect);
-			clipRects = 0;
-		}
-
-		break;
-	case WL_OUTPUT_TRANSFORM_180:
-		if ((gs->g2d_surface.base.height == 32 &&
-		     gs->g2d_surface.base.width == dstsurface->base.width))
-		{
-			/*Skip the backgroud and panel rotation*/
-			calculate_rect_with_transform(gs->g2d_surface.base.width,
-						      gs->g2d_surface.base.height,
-						      output->transform,
-						      &srcRect);
-			clipRects = 0;
-		}
-		break;
-	default:
-		break;
-	}
 
 	calculate_rect_with_transform(dstsurface->base.width,
 				      dstsurface->base.height,
 				      output->transform, &dstrect);
 
-	if(clipRects)
+	if(view_transform != output->transform)
 	{
 		g2d_clip_rects(output->transform, &srcRect, &dstrect, dstWidth, dstHeight);
 		gs->g2d_surface.base.rot = convert_transform_to_rot(output->transform);
+	} else {
+		/* if the view is transformed by compositor, we only need handle input crop
+		 * according to dst rect */
+		g2d_clip_rects(WL_OUTPUT_TRANSFORM_NORMAL, &srcRect, &dstrect, dstWidth, dstHeight);
 	}
 
 	for (i = 0; i < nrects; i++)
