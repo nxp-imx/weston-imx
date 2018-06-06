@@ -2821,10 +2821,11 @@ drm_query_dmabuf_formats(struct weston_compositor *compositor, int **formats, in
 	assert(formats);
 	assert(num_formats);
 
+	*num_formats = 0;
+
 	ret = drmGetCap (b->drm.fd, DRM_CAP_PRIME, &has_prime);
 	if (ret || !(bool) (has_prime & DRM_PRIME_CAP_IMPORT)) {
 	        weston_log("drm backend not support import DMABUF\n");
-	        *num_formats = 0;
 	        return;
 	}
 
