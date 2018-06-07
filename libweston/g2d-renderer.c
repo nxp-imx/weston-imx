@@ -736,7 +736,13 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	int dstWidth = 0;
 	int dstHeight = 0;
 	struct g2d_surfaceEx *dstsurface;
+	struct g2d_surfaceEx srcsurface = gs->g2d_surface;
 	uint32_t view_transform = ev->surface->buffer_viewport.buffer.transform;
+	int src_x = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_x);
+	int src_y = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_y);
+	int src_width = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_width);
+	int src_height = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_height);
+	int scale = ev->surface->buffer_viewport.buffer.scale;
 
 	bb_rects = pixman_region32_rectangles(&ev->transform.boundingbox, &nbb);
 
@@ -747,10 +753,22 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 
 	rects = pixman_region32_rectangles(region, &nrects);
 	surf_rects = pixman_region32_rectangles(surf_region, &nsurf);
-	srcRect.left = 0;
-	srcRect.top  = 0;
-	srcRect.right  = gs->g2d_surface.base.width;
-	srcRect.bottom = gs->g2d_surface.base.height;
+	if(src_width != -1 && src_width > 0 && src_x >=0 && src_y >= 0
+		&& src_x < gs->g2d_surface.base.width
+		&& src_y < gs->g2d_surface.base.height)
+	{
+		srcRect.left = src_x * scale;
+		srcRect.top = src_y * scale;
+		srcRect.right = min (gs->g2d_surface.base.width, (src_x + src_width) * scale);
+		srcRect.bottom = min (gs->g2d_surface.base.height, (src_y + src_height) * scale);
+	}
+	else
+	{
+		srcRect.left = srcsurface.base.left;
+		srcRect.top  = srcsurface.base.top;
+		srcRect.right  = srcsurface.base.right;
+		srcRect.bottom = srcsurface.base.bottom;
+	}
 	if(go->drm_hw_buffer && gr->use_drm)
 	{
 		dstsurface = go->drm_hw_buffer;
@@ -787,7 +805,7 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	if(view_transform != output->transform)
 	{
 		g2d_clip_rects(output->transform, &srcRect, &dstrect, dstWidth, dstHeight);
-		gs->g2d_surface.base.rot = convert_transform_to_rot(output->transform);
+		srcsurface.base.rot = convert_transform_to_rot(output->transform);
 	} else {
 		/* if the view is transformed by compositor, we only need handle input crop
 		 * according to dst rect */
@@ -835,7 +853,7 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 						      output->transform, &clipRect);
 
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
-			g2d_blit_surface(gr->handle, &gs->g2d_surface, dstsurface, &srcRect, &dstrect);
+			g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
 		}
 	}
 }
@@ -1167,7 +1185,7 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer,
 	gs->g2d_surface.base.left = 0;
 	gs->g2d_surface.base.top  = 0;
 	gs->g2d_surface.base.right  = buffer->width;
-	gs->g2d_surface.base.bottom = height;
+	gs->g2d_surface.base.bottom = buffer->height;
 	gs->g2d_surface.base.stride = alignedWidth;
 	gs->g2d_surface.base.width  = buffer->width;
 	gs->g2d_surface.base.height = height;
