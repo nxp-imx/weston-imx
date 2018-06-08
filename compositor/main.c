@@ -489,7 +489,7 @@ usage(int error_code)
 		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
 #endif
 #if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
-		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+		"  --use-g2d=1\t\tUse the G2D renderer (default: GL rendering)\n"
 #endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
 #endif
@@ -505,7 +505,7 @@ usage(int error_code)
 		"  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
 #endif
 #if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
-		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+		"  --use-g2d=1\t\tUse the G2D renderer (default: GL rendering)\n"
 #endif
 #if defined(ENABLE_IMXG2D)
 		"  --device=DEVICE[,DEVICE]...\n"
