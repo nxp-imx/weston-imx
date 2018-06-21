@@ -983,6 +983,8 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	} else if (ev->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_STRAIGHT) {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	} else if (ev->blending_equation == ZWP_BLENDING_V1_BLENDING_EQUATION_FROMSOURCE) {
+		glBlendFunc(GL_SRC_ALPHA, GL_SRC_ALPHA);
 	} else {
 		glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	}
