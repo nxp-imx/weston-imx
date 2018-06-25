@@ -2828,6 +2828,20 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 	GLenum target;
 	int i;
 
+	/**
+	 * if backend can handle dmabuf directly, then we only need set
+	 * size to buffer.
+	 * */
+	if (surface->compositor->backend->import_dmabuf) {
+		struct weston_compositor *compositor = surface->compositor;
+		struct weston_backend *backend = surface->compositor->backend;
+		if (backend->import_dmabuf(compositor, dmabuf)){
+			buffer->width = dmabuf->attributes.width;
+			buffer->height = dmabuf->attributes.height;
+			return;
+		}
+	}
+
 	if (!gr->has_dmabuf_import) {
 		linux_dmabuf_buffer_send_server_error(dmabuf,
 				"EGL dmabuf import not supported");
