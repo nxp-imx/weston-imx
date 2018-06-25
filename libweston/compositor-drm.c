@@ -2849,6 +2849,43 @@ drm_query_dmabuf_formats(struct weston_compositor *compositor, int **formats, in
 	}
 }
 
+/**
+ * Test if drm driver can import dmabuf
+ *
+ * called by compositor when a dmabuf comes to test if this buffer
+ * can used by drm driver directly
+ */
+static bool
+drm_import_dmabuf(struct weston_compositor *compositor,
+	struct linux_dmabuf_buffer *dmabuf)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+	struct drm_plane *p;
+	uint64_t has_prime;
+	uint32_t i;
+	int ret;
+
+	ret = drmGetCap (b->drm.fd, DRM_CAP_PRIME, &has_prime);
+	if (ret || !(bool) (has_prime & DRM_PRIME_CAP_IMPORT)) {
+	        weston_log("drm backend not support import DMABUF\n");
+	        return false;
+	}
+
+	wl_list_for_each(p, &b->plane_list, link) {
+		if (p->type != WDRM_PLANE_TYPE_OVERLAY)
+			continue;
+
+		for (i = 0; i < p->count_formats; i++) {
+			if (p->formats[i].format == dmabuf->attributes.format
+				&& (dmabuf->attributes.format == DRM_FORMAT_NV12
+					|| dmabuf->attributes.format == DRM_FORMAT_P010))
+				return true;
+		}
+	}
+
+	return false;
+}
+
 #ifdef HAVE_DRM_ATOMIC
 static void
 atomic_flip_handler(int fd, unsigned int frame, unsigned int sec,
@@ -6288,6 +6325,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->base.repaint_flush = drm_repaint_flush;
 	b->base.repaint_cancel = drm_repaint_cancel;
 	b->base.query_dmabuf_formats = drm_query_dmabuf_formats;
+	b->base.import_dmabuf = drm_import_dmabuf;
 
 	weston_setup_vt_switch_bindings(compositor);
 
