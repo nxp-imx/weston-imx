@@ -2799,6 +2799,20 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 		return true;
 	}
 
+	/**
+	 * if backend can handle dmabuf directly, then we only need set
+	 * size to buffer.
+	 * */
+	if (surface->compositor->backend->import_dmabuf) {
+		struct weston_compositor *compositor = surface->compositor;
+		struct weston_backend *backend = surface->compositor->backend;
+		if (backend->import_dmabuf(compositor, dmabuf)){
+			buffer->width = dmabuf->attributes.width;
+			buffer->height = dmabuf->attributes.height;
+			return true;
+		}
+	}
+
 	/* Thanks to linux-dmabuf being totally independent of libweston,
 	 * the first time a dmabuf is attached, the gl_buffer_state will
 	 * only be set as userdata on the dmabuf, not on the weston_buffer.

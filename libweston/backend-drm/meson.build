@@ -88,6 +88,7 @@ endif
 plugin_drm = shared_library(
 	'drm-backend',
 	srcs_drm,
+	c_args: drm_cflags,
 	include_directories: common_inc,
 	dependencies: deps_drm,
 	name_prefix: '',
