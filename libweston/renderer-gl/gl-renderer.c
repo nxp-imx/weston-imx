@@ -3446,6 +3446,39 @@ gl_renderer_attach_buffer(struct weston_surface *surface,
 	GLenum target;
 	int i;
 
+	if (buffer->type == WESTON_BUFFER_DMABUF) {
+		/**
+		* if backend can handle dmabuf directly, then we only need set
+		* size to buffer.
+		* */
+		struct linux_dmabuf_buffer *dmabuf = buffer->dmabuf;
+		struct weston_backend *backend;
+		wl_list_for_each(backend, &surface->compositor->backend_list, link) {
+			if (!backend->import_dmabuf)
+				continue;
+
+			struct weston_compositor *compositor = surface->compositor;
+			if (backend->import_dmabuf(compositor, dmabuf)) {
+				/* gl cannot handle 10bit format from vpu, if resize window and cause
+				 * scale ratio exceed the max limitation, weston will fallback to
+				 * gl-renderer to handle surface buffer, we need ensure a fake
+				 * gl surface buffer to avoid crash.
+				 */
+				struct weston_paint_node *pnode;
+				wl_list_for_each(pnode, &surface->paint_node_list, surface_link) {
+					if (pnode->surface != surface)
+						continue;
+					attach_direct_display_placeholder(pnode);
+					break;
+				}
+
+				buffer->width = dmabuf->attributes.width;
+				buffer->height = dmabuf->attributes.height;
+				return;
+			}
+		}
+	}
+
 	assert(buffer->renderer_private);
 	gb = buffer->renderer_private;
 
