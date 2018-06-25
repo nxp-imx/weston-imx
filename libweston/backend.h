@@ -110,6 +110,9 @@ struct weston_backend {
 
 	const struct weston_drm_format_array *
 			(*get_supported_formats)(struct weston_compositor *ec);
+
+	bool (*import_dmabuf)(struct weston_compositor* compositor,
+					struct linux_dmabuf_buffer *dmabuf);
 };
 
 /* weston_head */
