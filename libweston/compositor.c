@@ -2879,6 +2879,7 @@ weston_buffer_from_resource(struct weston_compositor *ec,
 	struct linux_dmabuf_buffer *dmabuf;
 	struct wl_listener *listener;
 	struct weston_solid_buffer_values *solid;
+	bool need_buffer_init = true;
 
 	listener = wl_resource_get_destroy_listener(resource,
 						    weston_buffer_destroy_handler);
@@ -2927,6 +2928,17 @@ weston_buffer_from_resource(struct weston_compositor *ec,
 			buffer->buffer_origin = ORIGIN_BOTTOM_LEFT;
 		else
 			buffer->buffer_origin = ORIGIN_TOP_LEFT;
+
+		/* if backend can handle dmabuf directly, no need to use renderer to
+		 * initialize the buffer */
+		struct weston_backend *backend;
+		wl_list_for_each(backend, &ec->backend_list, link) {
+			if (!backend->import_dmabuf)
+				continue;
+
+			if (backend->import_dmabuf(ec, dmabuf))
+				need_buffer_init = false;
+		}
 	} else if ((solid = single_pixel_buffer_get(buffer->resource))) {
 		buffer->type = WESTON_BUFFER_SOLID;
 		buffer->solid = *solid;
@@ -2949,7 +2961,7 @@ weston_buffer_from_resource(struct weston_compositor *ec,
 		buffer->type = WESTON_BUFFER_RENDERER_OPAQUE;
 	}
 
-	if (ec->renderer->buffer_init)
+	if (ec->renderer->buffer_init && need_buffer_init)
 		ec->renderer->buffer_init(ec, buffer);
 
 	/* Don't accept any formats we can't reason about: the importer should
@@ -9886,8 +9898,18 @@ weston_compositor_import_dmabuf(struct weston_compositor *compositor,
 				struct linux_dmabuf_buffer *buffer)
 {
 	struct weston_renderer *renderer;
+	struct weston_backend *backend;
 
 	renderer = compositor->renderer;
+
+	/* first try backend import, if fail, fallback to render import */
+	wl_list_for_each(backend, &compositor->backend_list, link) {
+		if (!backend->import_dmabuf)
+			continue;
+
+		if(backend->import_dmabuf(compositor, buffer))
+			return true;
+	}
 
 	if (renderer->import_dmabuf == NULL)
 		return false;
