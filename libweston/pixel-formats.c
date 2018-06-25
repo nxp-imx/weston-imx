@@ -270,6 +270,13 @@ static const struct pixel_format_info pixel_format_table[] = {
 		.vsub = 2,
 	},
 	{
+		DRM_FORMAT(P010),
+		.format = DRM_FORMAT_P010,
+		.num_planes = 2,
+		.hsub = 2,
+		.vsub = 2,
+	},
+	{
 		DRM_FORMAT(NV21),
 		SAMPLER_TYPE(EGL_TEXTURE_Y_UV_WL),
 		.num_planes = 2,
