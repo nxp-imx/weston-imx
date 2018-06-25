@@ -8151,8 +8151,15 @@ weston_compositor_import_dmabuf(struct weston_compositor *compositor,
 				struct linux_dmabuf_buffer *buffer)
 {
 	struct weston_renderer *renderer;
+	struct weston_backend *backend;
 
 	renderer = compositor->renderer;
+	backend = compositor->backend;
+
+	/* first try backend import, if fail, fallback to render import */
+	if (backend->import_dmabuf)
+		if(backend->import_dmabuf(compositor, buffer))
+			return true;
 
 	if (renderer->import_dmabuf == NULL)
 		return false;
