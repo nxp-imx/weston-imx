@@ -3085,6 +3085,41 @@ static const struct weston_drm_output_api api = {
 	drm_output_set_seat,
 };
 
+/**
+ * Test if drm driver can import dmabuf
+ *
+ * called by compositor when a dmabuf comes to test if this buffer
+ * can used by drm driver directly
+ */
+static bool
+drm_import_dmabuf(struct weston_compositor *compositor,
+	struct linux_dmabuf_buffer *dmabuf)
+{
+	struct drm_backend *b = to_drm_backend(compositor);
+	struct drm_plane *p;
+	uint64_t has_prime;
+	uint32_t i;
+	int ret;
+
+	ret = drmGetCap (b->drm.fd, DRM_CAP_PRIME, &has_prime);
+	if (ret || !(bool) (has_prime & DRM_PRIME_CAP_IMPORT)) {
+	        weston_log("drm backend not support import DMABUF\n");
+	        return false;
+	}
+
+	wl_list_for_each(p, &b->plane_list, link) {
+		if (p->type != WDRM_PLANE_TYPE_OVERLAY)
+			continue;
+		struct weston_drm_format * format =
+			weston_drm_format_array_find_format (&p->formats, DRM_FORMAT_NV12_10LE40);
+
+		if (format && dmabuf->attributes.format == DRM_FORMAT_NV12_10LE40)
+			return true;
+	}
+
+	return false;
+}
+
 static struct drm_backend *
 drm_backend_create(struct weston_compositor *compositor,
 		   struct weston_drm_backend_config *config)
@@ -3200,6 +3235,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->base.device_changed = drm_device_changed;
 	b->base.can_scanout_dmabuf = drm_can_scanout_dmabuf;
 	b->base.get_supported_formats = drm_get_supported_formats;
+	b->base.import_dmabuf = drm_import_dmabuf;
 
 	weston_drm_format_array_init(&b->supported_formats);
 
