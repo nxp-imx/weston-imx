@@ -187,6 +187,11 @@ dep_libdisplay_info = dependency(
 	required: true,
 )
 
+dep_libdrm_version = dep_libdrm.version()
+if dep_libdrm_version.version_compare('>=2.4.107')
+  config_h.set('USE_DRM_FORMAT_NV15', '1')
+endif
+
 prog_python = import('python').find_installation('python3')
 files_xxd_py = files('tools/xxd.py')
 cmd_xxd = [ prog_python, files_xxd_py, '@INPUT@', '@OUTPUT@' ]

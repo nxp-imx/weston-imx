@@ -3934,12 +3934,81 @@ gl_renderer_import_dmabuf(struct weston_compositor *ec,
 	return true;
 }
 
+static struct gl_buffer_state *
+ensure_renderer_gl_buffer_state(struct weston_surface *surface,
+				struct weston_buffer *buffer)
+{
+	struct gl_renderer *gr = get_renderer(surface->compositor);
+	struct gl_surface_state *gs = get_surface_state(surface);
+	struct gl_buffer_state *gb = buffer->renderer_private;
+
+	if (gb) {
+		gs->buffer = gb;
+		return gb;
+	}
+
+	gb = zalloc(sizeof(*gb));
+	gb->gr = gr;
+	pixman_region32_init(&gb->texture_damage);
+	buffer->renderer_private = gb;
+	gb->destroy_listener.notify = handle_buffer_destroy;
+	wl_signal_add(&buffer->destroy_signal, &gb->destroy_listener);
+
+	gs->buffer = gb;
+
+	return gb;
+}
+
+static void
+attach_direct_display_placeholder(struct weston_paint_node *pnode)
+{
+	struct weston_surface *surface = pnode->surface;
+	struct weston_buffer *buffer = surface->buffer_ref.buffer;
+	struct gl_buffer_state *gb;
+
+	gb = ensure_renderer_gl_buffer_state(surface, buffer);
+	gb->shader_variant = SHADER_VARIANT_SOLID;
+}
+
 static void
 gl_renderer_attach_buffer(struct weston_surface *surface,
 			  struct weston_buffer *buffer)
 {
 	struct gl_surface_state *gs = get_surface_state(surface);
 	struct gl_buffer_state *gb;
+
+	if (buffer->type == WESTON_BUFFER_DMABUF) {
+		/**
+		* if backend can handle dmabuf directly, then we only need set
+		* size to buffer.
+		* */
+		struct linux_dmabuf_buffer *dmabuf = buffer->dmabuf;
+		struct weston_backend *backend;
+		wl_list_for_each(backend, &surface->compositor->backend_list, link) {
+			if (!backend->import_dmabuf)
+				continue;
+
+			struct weston_compositor *compositor = surface->compositor;
+			if (backend->import_dmabuf(compositor, dmabuf)) {
+				/* gl cannot handle 10bit format from vpu, if resize window and cause
+				 * scale ratio exceed the max limitation, weston will fallback to
+				 * gl-renderer to handle surface buffer, we need ensure a fake
+				 * gl surface buffer to avoid crash.
+				 */
+				struct weston_paint_node *pnode;
+				wl_list_for_each(pnode, &surface->paint_node_list, surface_link) {
+					if (pnode->surface != surface)
+						continue;
+					attach_direct_display_placeholder(pnode);
+					break;
+				}
+
+				buffer->width = dmabuf->attributes.width;
+				buffer->height = dmabuf->attributes.height;
+				return;
+			}
+		}
+	}
 
 	assert(buffer->renderer_private);
 	gb = buffer->renderer_private;
