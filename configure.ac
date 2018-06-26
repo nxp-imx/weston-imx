@@ -160,12 +160,20 @@ if test x$enable_egl = xyes -a x$enable_opengl = xyes; then
 	PKG_CHECK_MODULES([GL_RENDERER], [libdrm])
 fi
 
+AC_ARG_ENABLE(imxgpu, [  --disable-imxgpu],,
+              enable_imxgpu=yes)
+AM_CONDITIONAL(ENABLE_IMXGPU, test x$enable_imxgpu = xyes)
+if test x$enable_imxgpu = xyes; then
+	AC_DEFINE([ENABLE_IMXGPU], [1], [Build Weston with i.MX GPU driver support])
+fi
+
 AC_ARG_ENABLE(imxg2d, [  --disable-imxg2d],,
               enable_imxg2d=yes)
-AM_CONDITIONAL(ENABLE_IMXG2D, test x$enable_imxg2d = xyes)
-if test x$enable_imxg2d = xyes; then
+AM_CONDITIONAL(ENABLE_IMXG2D, test x$enable_imxgpu = xyes -a x$enable_imxg2d = xyes)
+if test x$enable_imxgpu = xyes -a x$enable_imxg2d = xyes; then
 	AC_DEFINE([ENABLE_IMXG2D], [1], [Build Weston with i.MX G2D support])
 fi
+
 COMPOSITOR_MODULES="$COMPOSITOR_MODULES xkbcommon >= 0.3.0"
 
 PKG_CHECK_MODULES(XKBCOMMON_COMPOSE, [xkbcommon >= 0.5.0],
@@ -715,6 +723,7 @@ AC_MSG_RESULT([
 	Cairo Renderer			${with_cairo}
 	EGL				${enable_egl}
 	OpenGL				${enable_opengl}
+	i.MX GPU Drivers		${enable_imxgpu}
 	i.MX G2D Renderer		${enable_imxg2d}
 	xcb_xkb				${have_xcb_xkb}
 	XWayland			${enable_xwayland}

@@ -50,13 +50,17 @@
 #include "launcher-util.h"
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
-#ifdef ENABLE_EGL
+#include "presentation-time-server-protocol.h"
+
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
 #include "gl-renderer.h"
 #endif
-#include "presentation-time-server-protocol.h"
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXG2D)
 #include "g2d-renderer.h"
 #endif
+#endif
+
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 
@@ -67,16 +71,16 @@ struct fbdev_backend {
 
 	struct udev *udev;
 	struct udev_input input;
+	uint32_t output_transform;
+	struct wl_listener session_listener;
 	int use_pixman;
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU)
+	NativeDisplayType display;
+#if defined(ENABLE_IMXG2D)
 	int use_g2d;
 	int clone_mode;
 	char clone_device[50];
 #endif
-	uint32_t output_transform;
-	struct wl_listener session_listener;
-#ifdef ENABLE_EGL
-	NativeDisplayType display;
 #endif
 };
 
@@ -110,16 +114,19 @@ struct fbdev_output {
 	/* pixman details. */
 	pixman_image_t *hw_surface;
 	int fb_fd;
-#ifdef ENABLE_EGL
+#if defined(ENABLE_IMXGPU)
 	NativeDisplayType display;
 	NativeWindowType  window;
 #endif
 };
-#ifdef ENABLE_OPENGL
+
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
 struct gl_renderer_interface *gl_renderer;
 #endif
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXG2D)
 struct g2d_renderer_interface *g2d_renderer;
+#endif
 #endif
 
 static const char default_seat[] = "seat0";
@@ -479,7 +486,7 @@ fbdev_frame_buffer_unmap(struct fbdev_output *output)
 		           strerror(errno));
 
 	output->fb = NULL;
-#ifdef ENABLE_EGL
+#if defined(ENABLE_IMXGPU)
 	if(output->window)
 		fbDestroyWindow(output->window);
 	if(output->display)
@@ -504,7 +511,8 @@ fbdev_output_enable(struct weston_output *base)
 	if (backend->use_pixman) {
 		if (pixman_renderer_output_create(&output->base) < 0)
 			goto out_hw_surface;
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
 	} else if (backend->use_g2d) {
 		const char *g2d_device = output->device;
 		if (backend->clone_mode)
@@ -516,7 +524,7 @@ fbdev_output_enable(struct weston_output *base)
 			goto out_hw_surface;
 		}
 #endif
-#ifdef ENABLE_OPENGL
+#if defined(ENABLE_OPENGL)
 	} else {
 		output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
 		if (output->window == NULL) {
@@ -530,6 +538,7 @@ fbdev_output_enable(struct weston_output *base)
 			weston_log("gl_renderer_output_create failed.\n");
 			goto out_hw_surface;
 		}
+#endif
 #endif
 	}
 
@@ -649,13 +658,15 @@ fbdev_output_destroy(struct weston_output *base)
 	if (backend->use_pixman) {
 		if (base->renderer_state != NULL)
 			pixman_renderer_output_destroy(base);
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
 	} else if (backend->use_g2d) {
 		g2d_renderer->output_destroy(base);
 #endif
-#ifdef ENABLE_OPENGL
+#if defined(ENABLE_OPENGL)
 	} else {
 		gl_renderer->output_destroy(base);
+#endif
 #endif
 	}
 	close(output->fb_fd);
@@ -840,7 +851,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
 	backend->use_pixman = param->use_pixman;
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	backend->use_g2d = param->use_g2d;
 	backend->clone_mode = param->clone_mode;
 	memcpy(&backend->clone_device[0], param->device, strlen(param->device));
@@ -852,7 +863,8 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (backend->use_pixman) {
 		if (pixman_renderer_init(compositor) < 0)
 			goto out_launcher;
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
 	} else if (backend->use_g2d) {
 		int x = 0, y = 0;
 		int i=0;
@@ -899,7 +911,7 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			}
 		}
 #endif
-#ifdef ENABLE_OPENGL
+#if defined(ENABLE_OPENGL)
 	} else {
 		gl_renderer = weston_load_module("gl-renderer.so",
 						 "gl_renderer_interface");
@@ -922,9 +934,10 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			goto out_launcher;
 		}
 #endif
+#endif
 	}
 
-#ifdef ENABLE_IMXG2D
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	if (!backend->use_g2d)
 #endif
 		if (fbdev_output_create(backend, 0, 0, param->device) < 0)
@@ -961,16 +974,20 @@ config_init_to_defaults(struct weston_fbdev_backend_config *config)
 	 * udev, rather than passing a device node in as a parameter. */
 	config->tty = 0; /* default to current tty */
 	config->device = "/dev/fb0"; /* default frame buffer */
-	config->use_pixman = 0;
-#ifdef ENABLE_IMXG2D
-#ifdef ENABLE_OPENGL
-	config->use_g2d = 0;
+	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
+#if !defined(ENABLE_IMXGPU) || !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config->use_pixman = 1;
 #else
+	config->use_pixman = 0;
+#endif
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+#if !defined(ENABLE_OPENGL)
 	config->use_g2d = 1;
+#else
+	config->use_g2d = 0;
 #endif
 	config->clone_mode = 0;
 #endif
-	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
 WL_EXPORT int
