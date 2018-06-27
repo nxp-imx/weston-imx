@@ -851,7 +851,10 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 			calculate_rect_with_transform(dstsurface->base.width,
 						      dstsurface->base.height,
 						      output->transform, &clipRect);
-
+			if(clipRect.left >= clipRect.right || clipRect.top >= clipRect.bottom)
+			{
+				return;
+			}
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
 			g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
 		}
