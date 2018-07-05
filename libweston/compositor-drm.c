@@ -3013,6 +3013,30 @@ drm_view_is_opaque(struct weston_view *ev)
 	return ret;
 }
 
+static void
+drm_clip_overlay_coordinate(struct drm_output * output,
+				struct drm_plane_state * state)
+{
+	uint32_t src_w = state->src_w >> 16;
+	uint32_t src_h = state->src_h >> 16;
+	/* handle out of screen case */
+	if (state->dest_x + state->dest_w > output->base.current_mode->width){
+		int32_t crop_width = output->base.current_mode->width - state->dest_x;
+		if(crop_width > 0) {
+			state->src_w = ALIGNTO((crop_width * src_w / state->dest_w), 2) << 16;
+			state->dest_w = crop_width;
+		}
+	}
+
+	if (state->dest_y + state->dest_h > output->base.current_mode->height){
+		int32_t crop_height = output->base.current_mode->height - state->dest_y;
+		if(crop_height > 0) {
+			state->src_h = ALIGNTO((crop_height * src_h / state->dest_h), 2) << 16;
+			state->dest_h = crop_height;
+		}
+	}
+}
+
 static struct weston_plane *
 drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 				struct weston_view *ev)
@@ -3027,11 +3051,12 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	struct linux_dmabuf_buffer *dmabuf;
 	struct gbm_bo *bo = NULL;
 	bool is_opaque = drm_view_is_opaque(ev);
-	pixman_region32_t dest_rect, src_rect;
+	pixman_region32_t dest_rect;
 	pixman_box32_t *box, tbox;
 	uint32_t format;
-	wl_fixed_t sx1, sy1, sx2, sy2;
 	int ret;
+	int32_t scale;
+	int src_x, src_y, src_width, src_height;
 
 	if (b->sprites_are_broken)
 		return NULL;
@@ -3052,8 +3077,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 
 	if (viewport->buffer.transform != output->base.transform)
 		return NULL;
-	if (viewport->buffer.scale != output->base.current_scale)
-		return NULL;
+
 	if (!drm_view_transform_supported(ev))
 		return NULL;
 
@@ -3143,6 +3167,12 @@ set_buffer:
 	p->base.x = box->x1;
 	p->base.y = box->y1;
 
+	if (viewport->buffer.scale != output->base.current_scale){
+		scale = MAX(viewport->buffer.scale, output->base.current_scale);
+	} else {
+		scale = output->base.current_scale;
+	}
+
 	/*
 	 * Calculate the source & dest rects properly based on actual
 	 * position (note the caller has called weston_view_update_transform()
@@ -3156,7 +3186,7 @@ set_buffer:
 	tbox = weston_transformed_rect(output->base.width,
 				       output->base.height,
 				       output->base.transform,
-				       output->base.current_scale,
+				       scale,
 				       *box);
 	state->dest_x = tbox.x1;
 	state->dest_y = tbox.y1;
@@ -3164,45 +3194,29 @@ set_buffer:
 	state->dest_h = tbox.y2 - tbox.y1;
 	pixman_region32_fini(&dest_rect);
 
-	pixman_region32_init(&src_rect);
-	pixman_region32_intersect(&src_rect, &ev->transform.boundingbox,
-				  &output->base.region);
-	box = pixman_region32_extents(&src_rect);
+	src_x = wl_fixed_to_int (viewport->buffer.src_x);
+	src_y = wl_fixed_to_int (viewport->buffer.src_y);
+	src_width = wl_fixed_to_int (viewport->buffer.src_width);
+	src_height = wl_fixed_to_int (viewport->buffer.src_height);
 
-	weston_view_from_global_fixed(ev,
-				      wl_fixed_from_int(box->x1),
-				      wl_fixed_from_int(box->y1),
-				      &sx1, &sy1);
-	weston_view_from_global_fixed(ev,
-				      wl_fixed_from_int(box->x2),
-				      wl_fixed_from_int(box->y2),
-				      &sx2, &sy2);
+	if(src_width != -1 && src_width > 0 && src_x >=0 && src_y >= 0
+		&& src_x * scale < state->fb->width
+		&& src_y * scale < state->fb->height)
+	{
+		state->src_x = (src_x * scale) << 16;
+		state->src_y = (src_y * scale) << 16;
+		state->src_w = MIN(state->fb->width - src_x * scale, src_width * scale) << 16;
+		state->src_h = MIN(state->fb->height - src_y * scale, src_height * scale) << 16;
+	}
+	else
+	{
+		state->src_x = 0;
+		state->src_y = 0;
+		state->src_w = state->fb->width << 16;
+		state->src_h = state->fb->height << 16;
+	}
 
-	if (sx1 < 0)
-		sx1 = 0;
-	if (sy1 < 0)
-		sy1 = 0;
-	if (sx2 > wl_fixed_from_int(ev->surface->width))
-		sx2 = wl_fixed_from_int(ev->surface->width);
-	if (sy2 > wl_fixed_from_int(ev->surface->height))
-		sy2 = wl_fixed_from_int(ev->surface->height);
-
-	tbox.x1 = sx1;
-	tbox.y1 = sy1;
-	tbox.x2 = sx2;
-	tbox.y2 = sy2;
-
-	tbox = weston_transformed_rect(wl_fixed_from_int(ev->surface->width),
-				       wl_fixed_from_int(ev->surface->height),
-				       viewport->buffer.transform,
-				       viewport->buffer.scale,
-				       tbox);
-
-	state->src_x = tbox.x1 << 8;
-	state->src_y = tbox.y1 << 8;
-	state->src_w = (tbox.x2 - tbox.x1) << 8;
-	state->src_h = (tbox.y2 - tbox.y1) << 8;
-	pixman_region32_fini(&src_rect);
+	drm_clip_overlay_coordinate(output, state);
 
 	ret = drm_pending_state_test(output_state->pending_state);
 	if (ret != 0)
