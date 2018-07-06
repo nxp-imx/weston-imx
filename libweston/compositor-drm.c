@@ -240,6 +240,7 @@ enum drm_output_state_duplicate_mode {
 enum drm_state_apply_mode {
 	DRM_STATE_APPLY_SYNC, /**< state fully processed */
 	DRM_STATE_APPLY_ASYNC, /**< state pending event delivery */
+	DRM_STATE_TEST_ONLY, /**< test if the state can be applied */
 };
 
 struct drm_backend {
@@ -2456,9 +2457,20 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	case DRM_STATE_APPLY_ASYNC:
 		flags |= DRM_MODE_PAGE_FLIP_EVENT | DRM_MODE_ATOMIC_NONBLOCK;
 		break;
+	case DRM_STATE_TEST_ONLY:
+		flags |= DRM_MODE_ATOMIC_TEST_ONLY;
+		break;
 	}
 
 	ret = drmModeAtomicCommit(b->drm.fd, req, flags, b);
+
+	if (mode == DRM_STATE_TEST_ONLY) {
+		drmModeAtomicFree(req);
+		if (ret != 0)
+			weston_log("atomic: test new state fail: %m\n");
+		return ret;
+	}
+
 	if (ret != 0) {
 		weston_log("atomic: couldn't commit new state: %m\n");
 		goto out;
@@ -2483,6 +2495,21 @@ out:
 	return ret;
 }
 #endif
+
+static int
+drm_pending_state_test(struct drm_pending_state *pending_state)
+{
+#ifdef HAVE_DRM_ATOMIC
+	struct drm_backend *b = pending_state->backend;
+	if (b->atomic_modeset)
+		return drm_pending_state_apply_atomic(pending_state,
+						      DRM_STATE_TEST_ONLY);
+#endif
+
+	/* We have no way to test state before application on the legacy
+	 * modesetting API, so just claim it succeeded. */
+	return 0;
+}
 
 /**
  * Applies all of a pending_state asynchronously: the primary entry point for
@@ -2996,6 +3023,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	pixman_box32_t *box, tbox;
 	uint32_t format;
 	wl_fixed_t sx1, sy1, sx2, sy2;
+	int ret;
 
 	if (b->sprites_are_broken)
 		return NULL;
@@ -3167,6 +3195,10 @@ set_buffer:
 	state->src_w = (tbox.x2 - tbox.x1) << 8;
 	state->src_h = (tbox.y2 - tbox.y1) << 8;
 	pixman_region32_fini(&src_rect);
+
+	ret = drm_pending_state_test(output_state->pending_state);
+	if (ret != 0)
+		goto err;
 
 	return &p->base;
 
