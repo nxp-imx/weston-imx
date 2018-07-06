@@ -2918,8 +2918,7 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 
 		for (i = 0; i < p->count_formats; i++) {
 			if (p->formats[i].format == dmabuf->attributes.format
-				&& (dmabuf->attributes.format == DRM_FORMAT_NV12
-					|| dmabuf->attributes.format == DRM_FORMAT_P010))
+				&& (dmabuf->attributes.format == DRM_FORMAT_P010))
 				return true;
 		}
 	}
@@ -3017,7 +3016,7 @@ drm_output_prepare_overlay_view(struct drm_output_state *output_state,
 	struct drm_plane *p;
 	struct drm_plane_state *state = NULL;
 	struct linux_dmabuf_buffer *dmabuf;
-	struct gbm_bo *bo;
+	struct gbm_bo *bo = NULL;
 	bool is_opaque = drm_view_is_opaque(ev);
 	pixman_region32_t dest_rect, src_rect;
 	pixman_box32_t *box, tbox;
@@ -3463,9 +3462,12 @@ drm_assign_planes(struct weston_output *output_base, void *repaint_data)
 			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
 			if (dmabuf) {
 				if (dmabuf->attributes.format == DRM_FORMAT_NV12
-				|| dmabuf->attributes.format == DRM_FORMAT_P010)
+				|| dmabuf->attributes.format == DRM_FORMAT_P010) {
 					next_plane = drm_output_prepare_overlay_view(state, ev);
-				else
+					if(!next_plane) {
+						next_plane = primary;
+					}
+				} else
 					next_plane = primary;
 			}
 		}
