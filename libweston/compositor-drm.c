@@ -2553,6 +2553,7 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	uint32_t flags = 0;
 	int ret = 0;
+	drm_magic_t magic;
 
 	if (!req)
 		return -1;
@@ -2660,6 +2661,11 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		break;
 	}
 
+	/*drm master was set by systemd in PM test, try to set the master back.*/
+	if (!(drmGetMagic(b->drm.fd, &magic) == 0 &&
+			drmAuthMagic(b->drm.fd, magic) == 0)) {
+		drmSetMaster(b->drm.fd);
+	}
 	ret = drmModeAtomicCommit(b->drm.fd, req, flags, b);
 
 	/* Test commits do not take ownership of the state; return
