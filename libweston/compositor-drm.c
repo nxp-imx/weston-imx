@@ -50,6 +50,7 @@
 #include <gbm.h>
 #include <libudev.h>
 
+#include "compositor/weston.h"
 #include "compositor.h"
 #include "compositor-drm.h"
 #include "weston-debug.h"
@@ -2263,6 +2264,7 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_backend *b = to_drm_backend(c);
 	struct drm_fb *fb;
+	struct weston_config_section *section;
 
 	/* If we already have a client buffer promoted to scanout, then we don't
 	 * want to render. */
@@ -2323,6 +2325,25 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	scanout_state->dest_w = scanout_state->src_w >> 16;
 	scanout_state->dest_h = scanout_state->src_h >> 16;
 
+	section = weston_config_get_section(wet_get_config(c),
+					    "shell", NULL, NULL);
+	if (section) {
+		char *size;
+		int n;
+		uint32_t width, height;
+
+		weston_config_section_get_string(section, "size", &size, NULL);
+
+		if(size){
+			n = sscanf(size, "%dx%d", &width, &height);
+			if (n == 2) {
+				if (scanout_state->src_w > (width << 16))
+					scanout_state->src_w = width << 16;
+				if (scanout_state->src_h > (height << 16))
+					scanout_state->src_h = height << 16;
+			}
+		}
+	}
 
 	pixman_region32_subtract(&c->primary_plane.damage,
 				 &c->primary_plane.damage, damage);
