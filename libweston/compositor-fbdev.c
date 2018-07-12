@@ -924,7 +924,18 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			goto out_launcher;
 		}
 
-		backend->display = fbGetDisplay(backend->compositor->wl_display);
+		/* determine which framebuffer we got so we don't use
+		 * FB_FRAMBUFFER_%d to override default displayId
+		 */
+		int index = -1;
+		sscanf(param->device, "/dev/fb%d", &index);
+
+		if (index < 0) {
+			weston_log("Failed to get proper frambuffer\n");
+			goto out_launcher;
+		}
+
+		backend->display = fbGetDisplayByIndex(index);
 		if (backend->display == NULL) {
 			weston_log("fbGetDisplay failed.\n");
 			goto out_launcher;
