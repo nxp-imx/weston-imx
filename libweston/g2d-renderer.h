@@ -49,7 +49,9 @@ struct g2d_renderer_interface {
 	int (*create_g2d_image)(struct g2d_surfaceEx* g2dSurface,
 				enum g2d_format g2dFormat,
 				void *vaddr,
-				int w, int h, int stride, int size);
+				int w, int h, int stride,
+				int size,
+				int dmafd);
 
 	void (*output_set_buffer)(struct weston_output *output,
 				struct g2d_surfaceEx *buffer);

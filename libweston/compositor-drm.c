@@ -4785,16 +4785,22 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		struct g2d_surfaceEx* g2dSurface = &(output->g2d_image[i]);
-		int ret;
+		int ret, dmafd = 0;
 		output->dumb[i] = drm_fb_create_dumb(b, w, h, format);
 		if (!output->dumb[i])
+			goto err;
+
+		ret = drmPrimeHandleToFD(b->drm.fd, output->dumb[i]->handles[0], DRM_CLOEXEC,
+				       &dmafd);
+		if(ret < 0)
 			goto err;
 
 		ret = g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
 						output->dumb[i]->map,
 						w, h,
 						output->dumb[i]->strides[0],
-						output->dumb[i]->size);
+						output->dumb[i]->size,
+						dmafd);
 		if (ret < 0)
 			goto err;
 	}

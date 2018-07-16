@@ -1653,23 +1653,28 @@ static int
 drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 				enum g2d_format g2dFormat,
 				void *vaddr,
-				int w, int h, int stride, int size)
+				int w, int h, int stride,
+				int size,
+				int dmafd)
 {
 	struct g2d_buf * buffer = NULL;
-	buffer = g2d_buf_from_virt_addr(vaddr, size);
+
+	buffer = g2d_buf_from_fd(dmafd);
 	if (!buffer)
 		return -1;
 
+	buffer->buf_vaddr = vaddr;
+	buffer->buf_size  = size;
 	g2dSurface->base.planes[0] = buffer->buf_paddr;
 	g2dSurface->base.left = 0;
 	g2dSurface->base.top  = 0;
-	g2dSurface->base.right  = w;
+	g2dSurface->base.right	= w;
 	g2dSurface->base.bottom = h;
 	g2dSurface->base.stride = w;
-	g2dSurface->base.width  = w;
+	g2dSurface->base.width	= w;
 	g2dSurface->base.height = h;
 	g2dSurface->base.format = g2dFormat;
-	g2dSurface->base.rot    = G2D_ROTATION_0;
+	g2dSurface->base.rot	= G2D_ROTATION_0;
 	g2dSurface->base.clrcolor = 0xFF400000;
 	g2dSurface->tiling = G2D_LINEAR;
 
