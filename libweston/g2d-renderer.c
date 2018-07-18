@@ -1301,7 +1301,7 @@ g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 	};
 
 	num = ARRAY_LENGTH(dma_formats);
-	*formats = calloc(*num_formats, sizeof(int));
+	*formats = calloc(num, sizeof(int));
 	memcpy(*formats, dma_formats, num * sizeof(int));
 
 	*num_formats = num;
