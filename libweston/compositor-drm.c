@@ -1916,6 +1916,22 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	if (scanout_state->fb)
 		return;
 
+#ifdef HAVE_GBM_MODIFIERS
+	int gbm_aligned = 1;
+	uint64_t modifier;
+	if (scanout_plane->state_cur->fb){
+		modifier = scanout_plane->state_cur->fb->modifier;
+		switch(modifier) {
+			case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED_FC:
+			case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED:
+				gbm_aligned = 64;
+				break;
+			default:
+				break;
+		}
+	}
+#endif
+
 	if (
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	    !b->use_g2d &&
@@ -1924,10 +1940,17 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	    scanout_plane->state_cur->fb &&
 	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
 	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
+#ifdef HAVE_GBM_MODIFIERS
+	    scanout_plane->state_cur->fb->width ==
+		ALIGNTO(output->base.current_mode->width, gbm_aligned) &&
+	    scanout_plane->state_cur->fb->height ==
+		ALIGNTO(output->base.current_mode->height, gbm_aligned)) {
+#else
 	    scanout_plane->state_cur->fb->width ==
 		output->base.current_mode->width &&
 	    scanout_plane->state_cur->fb->height ==
 		output->base.current_mode->height) {
+#endif
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
