@@ -189,6 +189,10 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage, void
 		fbdev_output_repaint_pixman(base,damage);
 	} else {
 		ec->renderer->repaint_output(base, damage);
+		if (base->kms_in_fence_fd != -1) {
+			close(base->kms_in_fence_fd);
+			base->kms_in_fence_fd = -1;
+		}
 		/* Update the damage region. */
 		pixman_region32_subtract(&ec->primary_plane.damage,
 	                         &ec->primary_plane.damage, damage);
