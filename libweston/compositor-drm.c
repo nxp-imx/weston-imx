@@ -1104,11 +1104,8 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 done:
 	if (gem_handle[0] != 0) {
 		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
-			int err;
 			struct drm_gem_close arg = { gem_handle[i], };
-			err = drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
-			if (err)
-				weston_log ("failed to close gem handle\n");
+			drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
 		}
 	}
 
@@ -2362,7 +2359,7 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 				      plane_state->dest_w);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_H,
 				      plane_state->dest_h);
-		if (base_output->kms_in_fence_fd != -1)
+		if (base_output->kms_in_fence_fd != -1 && plane->type == WDRM_PLANE_TYPE_PRIMARY)
 			ret |= plane_add_prop(req, plane, WDRM_PLANE_IN_FENCE_FD, base_output->kms_in_fence_fd);
 
 		if (ret != 0) {
