@@ -260,7 +260,6 @@ struct gl_renderer {
 	int has_native_fence_sync;
 	PFNEGLCREATESYNCKHRPROC create_sync;
 	PFNEGLDESTROYSYNCKHRPROC destroy_sync;
-	PFNEGLWAITSYNCKHRPROC wait_sync;
 	PFNEGLDUPNATIVEFENCEFDANDROIDPROC dup_native_fence_fd;
 };
 
@@ -1258,56 +1257,6 @@ output_rotate_damage(struct weston_output *output,
 	go->border_damage[go->buffer_damage_index] = border_status;
 }
 
-static EGLSyncKHR
-create_fence(struct gl_renderer *gr, int fd)
-{
-	EGLint attrib_list[] = {
-		EGL_SYNC_NATIVE_FENCE_FD_ANDROID, fd,
-		EGL_NONE,
-	};
-	if (!gr->has_native_fence_sync)
-		return EGL_NO_SYNC_KHR;
-
-	EGLSyncKHR fence = gr->create_sync(gr->egl_display,
-			EGL_SYNC_NATIVE_FENCE_ANDROID, attrib_list);
-	assert(fence);
-	return fence;
-}
-
-static void
-wait_out_fence_from_display(struct weston_output *output,
-					struct gl_renderer *gr)
-{
-	EGLSyncKHR kms_fence = NULL;   /* in-fence to gpu, out-fence from kms */
-	if (output->kms_out_fence_fd != -1 && gr->has_native_fence_sync) {
-		kms_fence = create_fence(gr, output->kms_out_fence_fd);
-
-		/* driver now has ownership of the fence fd: */
-		output->kms_out_fence_fd = -1;
-
-		/* wait "on the gpu" (ie. this won't necessarily block, but
-		 * will block the rendering until fence is signaled), until
-		 * the previous pageflip completes so we don't render into
-		 * the buffer that is still on screen.
-		 */
-		gr->wait_sync(gr->egl_display, kms_fence, 0);
-		gr->destroy_sync(gr->egl_display, kms_fence);
-	}
-}
-
-static void
-create_in_fence_to_display(struct weston_output *output,
-					struct gl_renderer *gr,
-					EGLSyncKHR gpu_fence)
-{
-	if(gr->has_native_fence_sync) {
-		output->kms_in_fence_fd =
-			gr->dup_native_fence_fd(gr->egl_display, gpu_fence);
-		gr->destroy_sync(gr->egl_display, gpu_fence);
-		assert(output->kms_in_fence_fd != -1);
-	}
-}
-
 /* NOTE: We now allow falling back to ARGB gl visuals when XRGB is
  * unavailable, so we're assuming the background has no transparency
  * and that everything with a blend, like drop shadows, will have something
@@ -1331,13 +1280,11 @@ gl_renderer_repaint_output(struct weston_output *output,
 	pixman_region32_t buffer_damage, total_damage;
 	enum gl_border_status border_damage = BORDER_STATUS_CLEAN;
 	EGLSyncKHR begin_render_sync, end_render_sync;
-	EGLSyncKHR gpu_fence = NULL;   /* out-fence from gpu, in-fence to kms */
 
 	if (use_output(output) < 0)
 		return;
 
 	begin_render_sync = timeline_create_render_sync(gr);
-	wait_out_fence_from_display(output, gr);
 
 	/* Calculate the viewport */
 	glViewport(go->borders[GL_RENDERER_BORDER_LEFT].width,
@@ -1389,8 +1336,6 @@ gl_renderer_repaint_output(struct weston_output *output,
 
 	end_render_sync = timeline_create_render_sync(gr);
 
-	gpu_fence = create_fence(gr, EGL_NO_NATIVE_FENCE_FD_ANDROID);
-
 	if (gr->swap_buffers_with_damage) {
 		pixman_region32_init(&buffer_damage);
 		weston_transformed_region(output->width, output->height,
@@ -1436,11 +1381,6 @@ gl_renderer_repaint_output(struct weston_output *output,
 	}
 
 	go->border_status = BORDER_STATUS_CLEAN;
-
-	/* after swapbuffers, gpu_fence should be flushed, so safe
-	 * to get fd:
-	 */
-	create_in_fence_to_display(output, gr, gpu_fence);
 
 	/* We have to submit the render sync objects after swap buffers, since
 	 * the objects get assigned a valid sync file fd only after a gl flush.
@@ -3349,8 +3289,6 @@ gl_renderer_setup_egl_extensions(struct weston_compositor *ec)
 			(void *) eglGetProcAddress("eglCreateSyncKHR");
 		gr->destroy_sync =
 			(void *) eglGetProcAddress("eglDestroySyncKHR");
-		gr->wait_sync =
-			(void *) eglGetProcAddress("eglWaitSyncKHR");
 		gr->dup_native_fence_fd =
 			(void *) eglGetProcAddress("eglDupNativeFenceFDANDROID");
 		gr->has_native_fence_sync = 1;

@@ -155,7 +155,6 @@ enum wdrm_plane_property {
 	WDRM_PLANE_FB_ID,
 	WDRM_PLANE_CRTC_ID,
 	WDRM_PLANE_IN_FORMATS,
-	WDRM_PLANE_IN_FENCE_FD,
 	WDRM_PLANE__COUNT
 };
 
@@ -198,7 +197,6 @@ static const struct drm_property_info plane_props[] = {
 	[WDRM_PLANE_FB_ID] = { .name = "FB_ID", },
 	[WDRM_PLANE_CRTC_ID] = { .name = "CRTC_ID", },
 	[WDRM_PLANE_IN_FORMATS] = { .name = "IN_FORMATS" },
-	[WDRM_PLANE_IN_FENCE_FD] = { .name = "IN_FENCE_FD" },
 };
 
 /**
@@ -225,14 +223,12 @@ static const struct drm_property_info connector_props[] = {
 enum wdrm_crtc_property {
 	WDRM_CRTC_MODE_ID = 0,
 	WDRM_CRTC_ACTIVE,
-	WDRM_CRTC_OUT_FENCE_PTR,
 	WDRM_CRTC__COUNT
 };
 
 static const struct drm_property_info crtc_props[] = {
 	[WDRM_CRTC_MODE_ID] = { .name = "MODE_ID", },
 	[WDRM_CRTC_ACTIVE] = { .name = "ACTIVE", },
-	[WDRM_CRTC_OUT_FENCE_PTR] = { .name = "OUT_FENCE_PTR", },
 };
 
 /**
@@ -2228,8 +2224,6 @@ err:
 }
 
 #ifdef HAVE_DRM_ATOMIC
-#define VOID2U64(x) ((uint64_t)(unsigned long)(x))
-
 static int
 crtc_add_prop(drmModeAtomicReq *req, struct drm_output *output,
 	      enum wdrm_crtc_property prop, uint64_t val)
@@ -2302,7 +2296,6 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	struct drm_backend *backend = to_drm_backend(output->base.compositor);
 	struct drm_plane_state *plane_state;
 	struct drm_mode *current_mode = to_drm_mode(output->base.current_mode);
-	struct weston_output *base_output = &output->base;
 	int ret = 0;
 
 	if (state->dpms != output->state_cur->dpms)
@@ -2321,9 +2314,6 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 		if (backend->hdr_blob_id > 0)
 			connector_add_prop(req, output, WDRM_CONNECTOR_HDR10_METADATA,
 					  backend->hdr_blob_id);
-		if (base_output->kms_in_fence_fd != -1)
-			crtc_add_prop(req, output, WDRM_CRTC_OUT_FENCE_PTR,
-				VOID2U64(&base_output->kms_out_fence_fd));
 	} else {
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_MODE_ID, 0);
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_ACTIVE, 0);
@@ -2359,8 +2349,6 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 				      plane_state->dest_w);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_H,
 				      plane_state->dest_h);
-		if (base_output->kms_in_fence_fd != -1 && plane->type == WDRM_PLANE_TYPE_PRIMARY)
-			ret |= plane_add_prop(req, plane, WDRM_PLANE_IN_FENCE_FD, base_output->kms_in_fence_fd);
 
 		if (ret != 0) {
 			weston_log("couldn't set plane state\n");
@@ -2382,8 +2370,6 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	struct drm_backend *b = pending_state->backend;
 	struct drm_output_state *output_state, *tmp;
 	struct drm_plane *plane;
-	struct drm_output *output = NULL;
-	struct weston_output *base_output;
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	uint32_t flags = 0;
 	int ret = 0;
@@ -2496,7 +2482,6 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		if (mode == DRM_STATE_APPLY_SYNC)
 			assert(output_state->dpms == WESTON_DPMS_OFF);
 		ret |= drm_output_apply_state_atomic(output_state, req, &flags);
-		output = output_state->output;
 	}
 
 	if (ret != 0) {
@@ -2521,14 +2506,6 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		drmSetMaster(b->drm.fd);
 	}
 	ret = drmModeAtomicCommit(b->drm.fd, req, flags, b);
-
-	if(output) {
-		base_output = &output->base;
-		if (base_output->kms_in_fence_fd != -1) {
-			close(base_output->kms_in_fence_fd);
-			base_output->kms_in_fence_fd = -1;
-		}
-	}
 
 	if (mode == DRM_STATE_TEST_ONLY) {
 		drmModeAtomicFree(req);

@@ -4889,9 +4889,6 @@ weston_output_enable(struct weston_output *output)
 	output->dirty = 1;
 	output->original_scale = output->scale;
 
-	output->kms_in_fence_fd = -1;
-	output->kms_out_fence_fd = -1;
-
 	weston_output_transform_scale_init(output, output->transform, output->scale);
 	weston_output_init_zoom(output);
 

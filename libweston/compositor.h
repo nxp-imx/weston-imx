@@ -206,9 +206,6 @@ struct weston_output {
 	int32_t current_scale;
 	int32_t original_scale;
 
-	int kms_in_fence_fd;
-	int kms_out_fence_fd;
-
 	struct weston_mode *native_mode;
 	struct weston_mode *current_mode;
 	struct weston_mode *original_mode;
