@@ -1234,12 +1234,13 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 			struct linux_dmabuf_buffer *dmabuf)
 {
 	struct g2d_surface_state *gs = get_surface_state(es);
-	int alignedWidth = 0;
+	int alignedWidth = 0, alignedHeight = 0;
 	enum g2d_format g2dFormat;
 	gctUINT32 paddr = 0;
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
 	alignedWidth = ALIGN_TO_16(buffer->width);
+	alignedHeight = ALIGN_TO_16(buffer->height);
 
 	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
 
@@ -1254,12 +1255,12 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	switch(g2dFormat){
 		case G2D_I420:
 			gs->g2d_surface.base.planes[0] = paddr;
-			gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * buffer->height;
-			gs->g2d_surface.base.planes[2] = gs->g2d_surface.base.planes[1] + alignedWidth * buffer->height / 4;
+			gs->g2d_surface.base.planes[1] = paddr + dmabuf->attributes.offset[1];
+			gs->g2d_surface.base.planes[2] = paddr + dmabuf->attributes.offset[2];
 			break;
 		case G2D_NV12:
 			gs->g2d_surface.base.planes[0] = paddr;
-			gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * buffer->height;
+			gs->g2d_surface.base.planes[1] = paddr + dmabuf->attributes.offset[1];
 			break;
 		case G2D_YUYV:
 		case G2D_RGB565:
@@ -1279,8 +1280,8 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gs->g2d_surface.base.right  = buffer->width;
 	gs->g2d_surface.base.bottom = buffer->height;
 	gs->g2d_surface.base.stride = alignedWidth;
-	gs->g2d_surface.base.width  = buffer->width;
-	gs->g2d_surface.base.height = buffer->height;
+	gs->g2d_surface.base.width  = alignedWidth;
+	gs->g2d_surface.base.height = alignedHeight;
 	gs->g2d_surface.base.rot    = G2D_ROTATION_0;
 	gs->g2d_surface.tiling = G2D_LINEAR;
 	gs->g2d_surface.base.format = g2dFormat;
