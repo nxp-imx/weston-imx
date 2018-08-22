@@ -2329,6 +2329,11 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	wl_list_for_each(plane_state, &state->plane_list, link) {
 		struct drm_plane *plane = plane_state->plane;
 
+		/* if no valid framebuffer provide, ignore this plane */
+		if (!plane_state->fb || plane_state->fb->fb_id == 0) {
+			continue;
+		}
+
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_FB_ID,
 				      plane_state->fb ? plane_state->fb->fb_id : 0);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_ID,
