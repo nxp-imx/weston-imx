@@ -868,11 +868,13 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	struct weston_compositor *ec = ev->surface->compositor;	
 	struct g2d_output_state *go = get_output_state(output);
 	struct g2d_surface_state *gs = get_surface_state(ev->surface);
+	struct g2d_renderer *gr = get_renderer(ec);
 	/* repaint bounding region in global coordinates: */
 	pixman_region32_t repaint;
+	/* opaque region in surface coordinates: */
+	pixman_region32_t surface_opaque;
 	/* non-opaque region in surface coordinates: */
 	pixman_region32_t surface_blend;
-	pixman_region32_t *buffer_damage;
 
 	pixman_region32_init(&repaint);
 	pixman_region32_intersect(&repaint,
@@ -882,31 +884,46 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	if (!pixman_region32_not_empty(&repaint))
 		goto out;
 
-	buffer_damage = &go->buffer_damage[go->current_buffer];
-	pixman_region32_subtract(buffer_damage, buffer_damage, &repaint);
-
 	/* blended region is whole surface minus opaque region: */
 	pixman_region32_init_rect(&surface_blend, 0, 0,
 				  ev->surface->width, ev->surface->height);
-	pixman_region32_subtract(&surface_blend, &surface_blend, &ev->surface->opaque);
+	if (ev->geometry.scissor_enabled)
+		pixman_region32_intersect(&surface_blend, &surface_blend,
+					  &ev->geometry.scissor);
+	pixman_region32_subtract(&surface_blend, &surface_blend,
+				 &ev->surface->opaque);
 
-	struct g2d_renderer *gr = get_renderer(ec);
-	if (pixman_region32_not_empty(&ev->surface->opaque)) {
-		repaint_region(ev, output, go, &repaint, &ev->surface->opaque);
-	}
+	/* XXX: Should we be using ev->transform.opaque here? */
+	pixman_region32_init(&surface_opaque);
+	if (ev->geometry.scissor_enabled)
+		pixman_region32_intersect(&surface_opaque,
+					  &ev->surface->opaque,
+					  &ev->geometry.scissor);
+	else
+		pixman_region32_copy(&surface_opaque, &ev->surface->opaque);
 
-	if (pixman_region32_not_empty(&surface_blend)) {
-		g2d_enable(gr->handle,G2D_BLEND);
-		if (ev->alpha < 1.0)
-		{
+	if (pixman_region32_not_empty(&surface_opaque)) {
+		if (ev->alpha < 1.0) {
+			g2d_enable(gr->handle, G2D_BLEND);
 			g2d_enable(gr->handle, G2D_GLOBAL_ALPHA);
 			gs->g2d_surface.base.global_alpha = ev->alpha * 0xFF;
 		}
-		repaint_region(ev, output, go, &repaint, &surface_blend);
+		repaint_region(ev, output, go, &repaint, &ev->surface->opaque);
 		g2d_disable(gr->handle, G2D_GLOBAL_ALPHA);
 		g2d_disable(gr->handle, G2D_BLEND);
 	}
+
+	if (pixman_region32_not_empty(&surface_blend)) {
+		/* Skip the render for global alpha, a workaround to disable the
+		   fade effect, it created garbage info in the sequence test.*/
+		if (ev->alpha >= 1.0) {
+			g2d_enable(gr->handle, G2D_BLEND);
+			repaint_region(ev, output, go, &repaint, &surface_blend);
+			g2d_disable(gr->handle, G2D_BLEND);
+		}
+	}
 	pixman_region32_fini(&surface_blend);
+	pixman_region32_fini(&surface_opaque);
 
 out:
 	pixman_region32_fini(&repaint);
@@ -925,28 +942,32 @@ repaint_views(struct weston_output *output, pixman_region32_t *damage)
 
 static void
 output_get_damage(struct weston_output *output,
-		  pixman_region32_t *buffer_damage,
-		  pixman_region32_t *output_damage)
+		  pixman_region32_t *buffer_damage)
 {
 	struct g2d_output_state *go = get_output_state(output);
 	int i;
 
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
-		pixman_region32_union(&go->buffer_damage[i],
-			&go->buffer_damage[i],
-			output_damage);
+		pixman_region32_union(buffer_damage,
+			buffer_damage,
+			&go->buffer_damage[i]);
+}
 
-	pixman_region32_union(output_damage, output_damage,
-		&go->buffer_damage[go->current_buffer]);
+static void
+output_rotate_damage(struct weston_output *output,
+		     pixman_region32_t *output_damage)
+{
+	struct g2d_output_state *go = get_output_state(output);
 
-	pixman_region32_union(buffer_damage, buffer_damage, &go->buffer_damage[go->current_buffer]);
+	go->current_buffer = (go->current_buffer + 1) % BUFFER_DAMAGE_COUNT;
+
+	pixman_region32_copy(&go->buffer_damage[go->current_buffer], output_damage);
 }
 
 static void
 g2d_renderer_repaint_output(struct weston_output *output,
 			     pixman_region32_t *output_damage)
 {
-	struct g2d_output_state *go = get_output_state(output);
 	struct weston_compositor *compositor = output->compositor;
 	struct g2d_renderer *gr = get_renderer(compositor);
 	pixman_region32_t buffer_damage, total_damage;
@@ -956,8 +977,9 @@ g2d_renderer_repaint_output(struct weston_output *output,
 	pixman_region32_init(&total_damage);
 	pixman_region32_init(&buffer_damage);
 
-	output_get_damage(output, &buffer_damage, output_damage);
-	pixman_region32_union(&total_damage, &buffer_damage, &output->previous_damage);
+	output_get_damage(output, &buffer_damage);
+	output_rotate_damage(output, output_damage);
+	pixman_region32_union(&total_damage, &buffer_damage, output_damage);
 
 	repaint_views(output, &total_damage);
 
@@ -970,7 +992,6 @@ g2d_renderer_repaint_output(struct weston_output *output,
 	wl_signal_emit(&output->frame_signal, output);
 	if(!gr->use_drm)
 		copy_to_framebuffer(output);
-	go->current_buffer = (go->current_buffer + 1) % BUFFER_DAMAGE_COUNT;
 }
 
 static void
