@@ -743,6 +743,11 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	int src_width = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_width);
 	int src_height = wl_fixed_to_int (ev->surface->buffer_viewport.buffer.src_height);
 	int scale = ev->surface->buffer_viewport.buffer.scale;
+	if (ev->alpha < 1.0) {
+		/* Skip the render for global alpha, a workaround to disable the
+		   fade effect, it created garbage info in the sequence test.*/
+		return;
+	}
 
 	bb_rects = pixman_region32_rectangles(&ev->transform.boundingbox, &nbb);
 
@@ -908,19 +913,20 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 			g2d_enable(gr->handle, G2D_GLOBAL_ALPHA);
 			gs->g2d_surface.base.global_alpha = ev->alpha * 0xFF;
 		}
-		repaint_region(ev, output, go, &repaint, &ev->surface->opaque);
+		repaint_region(ev, output, go, &repaint, &surface_opaque);
 		g2d_disable(gr->handle, G2D_GLOBAL_ALPHA);
 		g2d_disable(gr->handle, G2D_BLEND);
 	}
 
 	if (pixman_region32_not_empty(&surface_blend)) {
-		/* Skip the render for global alpha, a workaround to disable the
-		   fade effect, it created garbage info in the sequence test.*/
-		if (ev->alpha >= 1.0) {
-			g2d_enable(gr->handle, G2D_BLEND);
-			repaint_region(ev, output, go, &repaint, &surface_blend);
-			g2d_disable(gr->handle, G2D_BLEND);
+		g2d_enable(gr->handle, G2D_BLEND);
+		if (ev->alpha < 1.0) {
+			g2d_enable(gr->handle, G2D_GLOBAL_ALPHA);
+			gs->g2d_surface.base.global_alpha = ev->alpha * 0xFF;
 		}
+		repaint_region(ev, output, go, &repaint, &surface_blend);
+		g2d_disable(gr->handle, G2D_GLOBAL_ALPHA);
+		g2d_disable(gr->handle, G2D_BLEND);
 	}
 	pixman_region32_fini(&surface_blend);
 	pixman_region32_fini(&surface_opaque);
