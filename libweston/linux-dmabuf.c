@@ -158,6 +158,9 @@ destroy_linux_dmabuf_wl_buffer(struct wl_resource *resource)
 	weston_assert_ptr_eq(buffer->compositor, buffer->buffer_resource, resource);
 	weston_assert_ptr_null(buffer->compositor, buffer->params_resource);
 
+	if (buffer->gem_handle_close_func)
+		buffer->gem_handle_close_func(buffer);
+
 	if (buffer->user_data_destroy_func)
 		buffer->user_data_destroy_func(buffer);
 
@@ -977,6 +980,21 @@ linux_dmabuf_buffer_get(struct weston_compositor *compositor,
 	weston_assert_ptr_eq(compositor, buffer->buffer_resource, resource);
 
 	return buffer;
+}
+
+/** Set drmbackend-private data
+ *
+ * set the drm gem handle close callback in the linux_dmabuf_buffer
+ *
+ * \param buffer The linux_dmabuf_buffer object to set for.
+ * \param func Destructor function to be called to close gem handle
+ *             when the linux_dmabuf_buffer gets destroyed.
+ */
+WL_EXPORT void
+linux_dmabuf_buffer_gem_handle_close_cb(struct linux_dmabuf_buffer *buffer,
+				  dmabuf_gem_handle_close_func func)
+{
+	buffer->gem_handle_close_func = func;
 }
 
 /** Set renderer-private data
