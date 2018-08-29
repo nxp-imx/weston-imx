@@ -129,6 +129,7 @@
 			(DRM_MODE_PICTURE_ASPECT_256_135<<19)
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
 
 /**
  * Represents the values of an enum-type KMS property
@@ -830,6 +831,9 @@ struct drm_fb *
 drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage);
 
 #endif
+
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb);
 #else
 inline static int
 init_egl(struct drm_backend *b)

@@ -43,8 +43,6 @@
 #include "drm-internal.h"
 #include "linux-dmabuf.h"
 
-#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
-
 static void
 drm_fb_destroy(struct drm_fb *fb)
 {
@@ -242,6 +240,28 @@ drm_close_gem_handle(struct linux_dmabuf_buffer *dmabuf)
 		}
 	}
 }
+
+#ifdef HAVE_GBM_MODIFIERS
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb)
+{
+       int gbm_aligned = 64;
+
+       if (fb){
+               switch(fb->modifier) {
+#if defined(ENABLE_IMXGPU)
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED_FC:
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED:
+                               gbm_aligned = 64;
+                               break;
+#endif
+                       default:
+                               break;
+               }
+       }
+       return gbm_aligned;
+}
+#endif
 
 static struct drm_fb *
 drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
