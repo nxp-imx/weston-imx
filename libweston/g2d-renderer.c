@@ -1957,6 +1957,8 @@ g2d_renderer_output_create(struct weston_output *output, struct wl_display *wl_d
 		}
 	}
 	g2d_finish(gr->handle);
+	if(go->renderSurf->base.format == G2D_RGB565)
+		g2d_enable(gr->handle, G2D_DITHER);
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
 		pixman_region32_init(&go->buffer_damage[i]);
     return 0;
