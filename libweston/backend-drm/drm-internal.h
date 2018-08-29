@@ -81,6 +81,8 @@
 #define DRM_PLANE_ALPHA_OPAQUE	0xffffUL
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 /**
  * A small wrapper to print information into the 'drm-backend' debug scope.
  *
