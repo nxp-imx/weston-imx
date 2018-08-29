@@ -43,6 +43,8 @@
 #include "drm-internal.h"
 #include "linux-dmabuf.h"
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 static void
 drm_fb_destroy(struct drm_fb *fb)
 {
@@ -75,6 +77,7 @@ drm_fb_addfb(struct drm_backend *b, struct drm_fb *fb)
 {
 	int ret = -EINVAL;
 	uint64_t mods[4] = { };
+	int width, height;
 	size_t i;
 
 	/* If we have a modifier set, we must only use the WithModifiers
@@ -84,7 +87,14 @@ drm_fb_addfb(struct drm_backend *b, struct drm_fb *fb)
 		 * for all planes. */
 		for (i = 0; i < ARRAY_LENGTH(mods) && fb->handles[i]; i++)
 			mods[i] = fb->modifier;
-		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
+			width = ALIGNTO (fb->width, 8);
+			height = ALIGNTO (fb->height, 256);
+		} else {
+			width = fb->width;
+			height = fb->height;
+		}
+		ret = drmModeAddFB2WithModifiers(fb->fd, width, height,
 						 fb->format->format,
 						 fb->handles, fb->strides,
 						 fb->offsets, mods, &fb->fb_id,
@@ -218,6 +228,21 @@ drm_fb_destroy_dmabuf(struct drm_fb *fb)
 	drm_fb_destroy(fb);
 }
 
+static void
+drm_close_gem_handle(struct linux_dmabuf_buffer *dmabuf)
+{
+	struct drm_backend *b = to_drm_backend(dmabuf->compositor);
+	int i;
+
+	if (dmabuf->gem_handles[0] != 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			struct drm_gem_close arg = { dmabuf->gem_handles[i], };
+			drmIoctl (b->drm.fd, DRM_IOCTL_GEM_CLOSE, &arg);
+			dmabuf->gem_handles[i] = 0;
+		}
+	}
+}
+
 static struct drm_fb *
 drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		       struct drm_backend *backend, bool is_opaque)
@@ -240,7 +265,8 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	};
 #endif /* HAVE_GBM_FD_IMPORT */
 
-	int i;
+	int i, ret = -1;
+	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
 
 	/* XXX: TODO:
 	 *
@@ -260,6 +286,62 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 
 	fb->refcnt = 1;
 	fb->type = BUFFER_DMABUF;
+	fb->width = dmabuf->attributes.width;
+	fb->height = dmabuf->attributes.height;
+	fb->modifier = dmabuf->attributes.modifier[0];
+	fb->size = 0;
+	fb->fd = backend->drm.fd;
+
+	static_assert(ARRAY_LENGTH(fb->strides) ==
+		      ARRAY_LENGTH(dmabuf->attributes.stride),
+		      "drm_fb and dmabuf stride size must match");
+	static_assert(sizeof(fb->strides) == sizeof(dmabuf->attributes.stride),
+		      "drm_fb and dmabuf stride size must match");
+	memcpy(fb->strides, dmabuf->attributes.stride, sizeof(fb->strides));
+	static_assert(ARRAY_LENGTH(fb->offsets) ==
+		      ARRAY_LENGTH(dmabuf->attributes.offset),
+		      "drm_fb and dmabuf offset size must match");
+	static_assert(sizeof(fb->offsets) == sizeof(dmabuf->attributes.offset),
+		      "drm_fb and dmabuf offset size must match");
+	memcpy(fb->offsets, dmabuf->attributes.offset, sizeof(fb->offsets));
+
+	fb->format = pixel_format_get_info(dmabuf->attributes.format);
+	if (!fb->format) {
+		weston_log("couldn't look up format info for 0x%lx\n",
+			   (unsigned long) dmabuf->attributes.format);
+		goto err_free;
+	}
+
+	if (is_opaque)
+		fb->format = pixel_format_get_opaque_substitute(fb->format);
+
+	if (backend->min_width > fb->width ||
+	    fb->width > backend->max_width ||
+	    backend->min_height > fb->height ||
+	    fb->height > backend->max_height) {
+		weston_log("bo geometry out of bounds\n");
+		goto err_free;
+	}
+
+	fb->num_planes = dmabuf->attributes.n_planes;
+	if (dmabuf->gem_handles[0] == 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int ret;
+			ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
+			if (ret) {
+				weston_log ("got gem_handle %x\n", gem_handle[i]);
+				goto err_free;
+			}
+			fb->handles[i] = dmabuf->gem_handles[i] = gem_handle[i];
+		}
+		linux_dmabuf_buffer_gem_handle_close_cb (dmabuf, drm_close_gem_handle);
+	} else {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++)
+			fb->handles[i] = dmabuf->gem_handles[i];
+	}
+
+	if (fb->handles[0] != 0)
+		goto add_fb;
 
 #ifdef HAVE_GBM_FD_IMPORT
 	static_assert(ARRAY_LENGTH(import_mod.fds) ==
@@ -310,44 +392,6 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	if (!fb->bo)
 		goto err_free;
 
-	fb->width = dmabuf->attributes.width;
-	fb->height = dmabuf->attributes.height;
-	fb->modifier = dmabuf->attributes.modifier[0];
-	fb->dtrc_meta = dmabuf->attributes.dtrc_meta;
-	fb->size = 0;
-	fb->fd = backend->drm.fd;
-
-	static_assert(ARRAY_LENGTH(fb->strides) ==
-		      ARRAY_LENGTH(dmabuf->attributes.stride),
-		      "drm_fb and dmabuf stride size must match");
-	static_assert(sizeof(fb->strides) == sizeof(dmabuf->attributes.stride),
-		      "drm_fb and dmabuf stride size must match");
-	memcpy(fb->strides, dmabuf->attributes.stride, sizeof(fb->strides));
-	static_assert(ARRAY_LENGTH(fb->offsets) ==
-		      ARRAY_LENGTH(dmabuf->attributes.offset),
-		      "drm_fb and dmabuf offset size must match");
-	static_assert(sizeof(fb->offsets) == sizeof(dmabuf->attributes.offset),
-		      "drm_fb and dmabuf offset size must match");
-	memcpy(fb->offsets, dmabuf->attributes.offset, sizeof(fb->offsets));
-
-	fb->format = pixel_format_get_info(dmabuf->attributes.format);
-	if (!fb->format) {
-		weston_log("couldn't look up format info for 0x%lx\n",
-			   (unsigned long) dmabuf->attributes.format);
-		goto err_free;
-	}
-
-	if (is_opaque)
-		fb->format = pixel_format_get_opaque_substitute(fb->format);
-
-	if (backend->min_width > fb->width ||
-	    fb->width > backend->max_width ||
-	    backend->min_height > fb->height ||
-	    fb->height > backend->max_height) {
-		weston_log("bo geometry out of bounds\n");
-		goto err_free;
-	}
-
 #ifdef HAVE_GBM_MODIFIERS
 	fb->num_planes = dmabuf->attributes.n_planes;
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
@@ -373,7 +417,10 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 #endif /* NOT HAVE_GBM_MODIFIERS */
 
 
-	if (drm_fb_addfb(backend, fb) != 0)
+add_fb:
+	ret = drm_fb_addfb(backend, fb);
+
+	if (ret != 0)
 		goto err_free;
 
 	return fb;

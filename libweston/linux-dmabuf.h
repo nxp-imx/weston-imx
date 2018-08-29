@@ -39,6 +39,8 @@
 struct linux_dmabuf_buffer;
 typedef void (*dmabuf_user_data_destroy_func)(
 			struct linux_dmabuf_buffer *buffer);
+typedef void (*dmabuf_gem_handle_close_func)(
+			struct linux_dmabuf_buffer *buffer);
 
 struct dmabuf_attributes {
 	int32_t width;
@@ -79,6 +81,9 @@ struct linux_dmabuf_buffer {
 
 	/**< marked as scan-out capable, avoids any composition */
 	bool direct_display;
+
+	uint32_t gem_handles[MAX_DMABUF_PLANES];
+	dmabuf_gem_handle_close_func gem_handle_close_func;
 };
 
 int
@@ -89,6 +94,10 @@ weston_direct_display_setup(struct weston_compositor *compositor);
 
 struct linux_dmabuf_buffer *
 linux_dmabuf_buffer_get(struct wl_resource *resource);
+
+void
+linux_dmabuf_buffer_gem_handle_close_cb(struct linux_dmabuf_buffer *buffer,
+				  dmabuf_gem_handle_close_func func);
 
 void
 linux_dmabuf_buffer_set_user_data(struct linux_dmabuf_buffer *buffer,
