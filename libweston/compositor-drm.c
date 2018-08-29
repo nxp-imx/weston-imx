@@ -2139,6 +2139,28 @@ err:
 	return NULL;
 }
 
+#ifdef HAVE_GBM_MODIFIERS
+static int
+drm_get_gbm_alignment(struct drm_fb *fb)
+{
+       int gbm_aligned = 64;
+
+       if (fb){
+               switch(fb->modifier) {
+#if defined(ENABLE_IMXGPU)
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED_FC:
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED:
+                               gbm_aligned = 64;
+                               break;
+#endif
+                       default:
+                               break;
+               }
+       }
+       return gbm_aligned;
+}
+#endif
+
 static struct drm_fb *
 drm_output_render_gl(struct drm_output_state *state, pixman_region32_t *damage)
 {
@@ -2236,14 +2258,25 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	if (scanout_state->fb)
 		return;
 
+#ifdef HAVE_GBM_MODIFIERS
+	int gbm_aligned = drm_get_gbm_alignment (scanout_plane->state_cur->fb);
+#endif
+
 	if (!pixman_region32_not_empty(damage) &&
 	    scanout_plane->state_cur->fb &&
 	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
 	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
+#ifdef HAVE_GBM_MODIFIERS
+	    scanout_plane->state_cur->fb->width ==
+		ALIGNTO(output->base.current_mode->width, gbm_aligned) &&
+	    scanout_plane->state_cur->fb->height ==
+		ALIGNTO(output->base.current_mode->height, gbm_aligned)) {
+#else
 	    scanout_plane->state_cur->fb->width ==
 		output->base.current_mode->width &&
 	    scanout_plane->state_cur->fb->height ==
 		output->base.current_mode->height) {
+#endif
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
@@ -3747,8 +3780,14 @@ drm_output_propose_state(struct weston_output *output_base,
 			return NULL;
 		}
 
+#ifdef HAVE_GBM_MODIFIERS
+		int gbm_aligned = drm_get_gbm_alignment (scanout_fb);
+		if (scanout_fb->width != ALIGNTO(output_base->current_mode->width, gbm_aligned) ||
+		    scanout_fb->height != ALIGNTO(output_base->current_mode->height, gbm_aligned)) {
+#else
 		if (scanout_fb->width != output_base->current_mode->width ||
 		    scanout_fb->height != output_base->current_mode->height) {
+#endif
 			drm_debug(b, "\t\t[state] cannot propose mixed mode "
 			             "for output %s (%lu): previous fb has "
 				     "different size\n",
@@ -3788,6 +3827,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		pixman_region32_t clipped_view;
 		bool totally_occluded = false;
 		bool overlay_occluded = false;
+		struct linux_dmabuf_buffer *dmabuf = NULL;
 
 		drm_debug(b, "\t\t\t[view] evaluating view %p for "
 		             "output %s (%lu)\n",
@@ -3814,6 +3854,21 @@ drm_output_propose_state(struct weston_output *output_base,
 			drm_debug(b, "\t\t\t\t[view] not assigning view %p to plane "
 			             "(no buffer available)\n", ev);
 			force_renderer = true;
+		} else {
+			struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
+			if (dmabuf) {
+				if (dmabuf->attributes.format == DRM_FORMAT_NV12
+					|| dmabuf->attributes.format == DRM_FORMAT_P010
+					|| dmabuf->attributes.format == DRM_FORMAT_YUYV) {
+					ps = drm_output_prepare_overlay_view(state, ev, mode);
+					if (ps)
+						goto next_view;
+					else
+						force_renderer = true;
+				} else
+					force_renderer = true;
+			}
 		}
 
 		/* Ignore views we know to be totally occluded. */
@@ -3889,6 +3944,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		if (!ps && !overlay_occluded && !force_renderer)
 			ps = drm_output_prepare_overlay_view(state, ev, mode);
 
+next_view:
 		if (ps) {
 			/* If we have been assigned to an overlay or scanout
 			 * plane, add this area to the occluded region, so
