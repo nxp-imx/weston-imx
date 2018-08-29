@@ -120,6 +120,8 @@
 #define DRM_MODE_FLAG_PIC_AR_MASK (0xF << DRM_MODE_FLAG_PIC_AR_BITS_POS)
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 /**
  * Represents the values of an enum-type KMS property
  */
@@ -627,6 +629,9 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_backend *backend,
 		   bool is_opaque, enum drm_fb_type type);
 struct drm_fb *
 drm_fb_get_from_view(struct drm_output_state *state, struct weston_view *ev);
+
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb);
 
 
 struct drm_pending_state *

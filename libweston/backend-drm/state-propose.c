@@ -474,8 +474,14 @@ drm_output_propose_state(struct weston_output *output_base,
 			return NULL;
 		}
 
+#ifdef HAVE_GBM_MODIFIERS
+		int gbm_aligned = drm_fb_get_gbm_alignment (scanout_fb);
+		if (scanout_fb->width != ALIGNTO(output_base->current_mode->width, gbm_aligned) ||
+		    scanout_fb->height != ALIGNTO(output_base->current_mode->height, gbm_aligned)) {
+#else
 		if (scanout_fb->width != output_base->current_mode->width ||
 		    scanout_fb->height != output_base->current_mode->height) {
+#endif
 			drm_debug(b, "\t\t[state] cannot propose mixed mode "
 			             "for output %s (%lu): previous fb has "
 				     "different size\n",
@@ -515,6 +521,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		pixman_region32_t clipped_view;
 		bool totally_occluded = false;
 		bool overlay_occluded = false;
+		struct linux_dmabuf_buffer *dmabuf = NULL;
 
 		drm_debug(b, "\t\t\t[view] evaluating view %p for "
 		             "output %s (%lu)\n",
@@ -541,6 +548,21 @@ drm_output_propose_state(struct weston_output *output_base,
 			drm_debug(b, "\t\t\t\t[view] not assigning view %p to plane "
 			             "(no buffer available)\n", ev);
 			force_renderer = true;
+		} else {
+			struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
+			if (dmabuf) {
+				if (dmabuf->attributes.format == DRM_FORMAT_NV12
+					|| dmabuf->attributes.format == DRM_FORMAT_P010
+					|| dmabuf->attributes.format == DRM_FORMAT_YUYV) {
+					ps = drm_output_prepare_overlay_view(state, ev, mode);
+					if (ps)
+						goto next_view;
+					else
+						force_renderer = true;
+				} else
+					force_renderer = true;
+			}
 		}
 
 		/* Ignore views we know to be totally occluded. */
@@ -616,6 +638,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		if (!ps && !overlay_occluded && !force_renderer)
 			ps = drm_output_prepare_overlay_view(state, ev, mode);
 
+next_view:
 		if (ps) {
 			/* If we have been assigned to an overlay or scanout
 			 * plane, add this area to the occluded region, so
