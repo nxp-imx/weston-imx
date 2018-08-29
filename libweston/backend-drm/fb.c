@@ -43,6 +43,8 @@
 #include "drm-internal.h"
 #include "linux-dmabuf.h"
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 static void
 drm_fb_destroy(struct drm_fb *fb)
 {
@@ -248,6 +250,20 @@ drm_fb_get_gbm_alignment(struct drm_fb *fb)
        return gbm_aligned;
 }
 #endif
+static void
+drm_close_gem_handle(struct linux_dmabuf_buffer *dmabuf)
+{
+	struct drm_backend *b = to_drm_backend(dmabuf->compositor);
+	int i;
+
+	if (dmabuf->gem_handles[0] != 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			struct drm_gem_close arg = { dmabuf->gem_handles[i], };
+			drmIoctl (b->drm.fd, DRM_IOCTL_GEM_CLOSE, &arg);
+			dmabuf->gem_handles[i] = 0;
+		}
+	}
+}
 
 static struct drm_fb *
 drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
@@ -262,6 +278,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 #else
 	struct drm_fb *fb;
 	int i;
+	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
 	struct gbm_import_fd_modifier_data import_mod = {
 		.width = dmabuf->attributes.width,
 		.height = dmabuf->attributes.height,
@@ -302,20 +319,6 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 
 	fb->refcnt = 1;
 	fb->type = BUFFER_DMABUF;
-
-	ARRAY_COPY(import_mod.fds, dmabuf->attributes.fd);
-	ARRAY_COPY(import_mod.strides, dmabuf->attributes.stride);
-	ARRAY_COPY(import_mod.offsets, dmabuf->attributes.offset);
-
-	fb->bo = gbm_bo_import(backend->gbm, GBM_BO_IMPORT_FD_MODIFIER,
-			       &import_mod, GBM_BO_USE_SCANOUT);
-	if (!fb->bo) {
-		if (try_view_on_plane_failure_reasons)
-			*try_view_on_plane_failure_reasons |=
-				FAILURE_REASONS_GBM_BO_IMPORT_FAILED;
-		goto err_free;
-	}
-
 	fb->width = dmabuf->attributes.width;
 	fb->height = dmabuf->attributes.height;
 	fb->modifier = dmabuf->attributes.modifier[0];
@@ -344,6 +347,35 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	}
 
 	fb->num_planes = dmabuf->attributes.n_planes;
+	if (dmabuf->gem_handles[0] == 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int ret;
+			ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
+			if (ret) {
+				weston_log ("got gem_handle %x\n", gem_handle[i]);
+				goto err_free;
+			}
+			fb->handles[i] = dmabuf->gem_handles[i] = gem_handle[i];
+		}
+		linux_dmabuf_buffer_gem_handle_close_cb (dmabuf, drm_close_gem_handle);
+	} else {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++)
+			fb->handles[i] = dmabuf->gem_handles[i];
+	}
+
+	if (fb->handles[0] != 0)
+		goto add_fb;
+
+	ARRAY_COPY(import_mod.fds, dmabuf->attributes.fd);
+	ARRAY_COPY(import_mod.strides, dmabuf->attributes.stride);
+	ARRAY_COPY(import_mod.offsets, dmabuf->attributes.offset);
+
+	fb->bo = gbm_bo_import(backend->gbm, GBM_BO_IMPORT_FD_MODIFIER,
+			       &import_mod, GBM_BO_USE_SCANOUT);
+	if (!fb->bo)
+		goto err_free;
+
+	fb->num_planes = dmabuf->attributes.n_planes;
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
 		union gbm_bo_handle handle;
 
@@ -353,6 +385,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		fb->handles[i] = handle.u32;
 	}
 
+add_fb:
 	if (drm_fb_addfb(backend, fb) != 0) {
 		if (try_view_on_plane_failure_reasons)
 			*try_view_on_plane_failure_reasons |=
