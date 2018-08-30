@@ -171,7 +171,9 @@ nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES =				\
 	protocol/weston-touch-calibration-protocol.c			\
 	protocol/weston-touch-calibration-server-protocol.h		\
 	protocol/alpha-compositing-unstable-v1-protocol.c		\
-	protocol/alpha-compositing-unstable-v1-server-protocol.h
+	protocol/alpha-compositing-unstable-v1-server-protocol.h\
+	protocol/hdr10-metadata-unstable-v1-protocol.c			\
+	protocol/hdr10-metadata-unstable-v1-server-protocol.h
 
 BUILT_SOURCES += $(nodist_libweston_@LIBWESTON_MAJOR@_la_SOURCES)
 
