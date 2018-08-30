@@ -388,11 +388,6 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_device *device,
 		goto err_free;
 	}
 
-	/* We can scanout an ARGB buffer if the surface's opaque region covers
-	 * the whole output, but we have to use XRGB as the KMS format code. */
-	if (is_opaque)
-		fb->format = pixel_format_get_opaque_substitute(fb->format);
-
 	if (device->min_width > fb->width ||
 	    fb->width > device->max_width ||
 	    device->min_height > fb->height ||
