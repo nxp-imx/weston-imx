@@ -77,6 +77,7 @@
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 #include "linux-explicit-synchronization.h"
+#include "hdr10-metadata-unstable-v1-server-protocol.h"
 
 #ifndef DRM_CLIENT_CAP_ASPECT_RATIO
 #define DRM_CLIENT_CAP_ASPECT_RATIO	4
@@ -238,6 +239,7 @@ enum wdrm_connector_property {
 	WDRM_CONNECTOR_DPMS,
 	WDRM_CONNECTOR_CRTC_ID,
 	WDRM_CONNECTOR_NON_DESKTOP,
+	WDRM_CONNECTOR_HDR10_METADATA,
 	WDRM_CONNECTOR__COUNT
 };
 
@@ -273,6 +275,7 @@ static const struct drm_property_info connector_props[] = {
 	},
 	[WDRM_CONNECTOR_CRTC_ID] = { .name = "CRTC_ID", },
 	[WDRM_CONNECTOR_NON_DESKTOP] = { .name = "non-desktop", },
+	[WDRM_CONNECTOR_HDR10_METADATA] = { .name = "HDR_SOURCE_METADATA", },
 };
 
 /**
@@ -324,6 +327,9 @@ struct drm_backend {
 	struct gbm_device *gbm;
 	struct wl_listener session_listener;
 	uint32_t gbm_format;
+
+	/* hdr10 metadata blob id */
+	unsigned int hdr_blob_id;
 
 	/* we need these parameters in order to not fail drmModeAddFB2()
 	 * due to out of bounds dimensions, and then mistakenly set
@@ -2704,6 +2710,15 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= connector_add_prop(req, head, WDRM_CONNECTOR_CRTC_ID,
 						  output->crtc_id);
 		}
+
+		if (b->hdr_blob_id > 0) {
+			wl_list_for_each(head, &output->base.head_list, base.output_link) {
+				/* checking if the output driver this head */
+				if (head->base.output == &output->base)
+					connector_add_prop(req, head, WDRM_CONNECTOR_HDR10_METADATA,
+							b->hdr_blob_id);
+			}
+		}
 	} else {
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_MODE_ID, 0);
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_ACTIVE, 0);
@@ -2942,6 +2957,10 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	assert(wl_list_empty(&pending_state->output_list));
 
 out:
+	if (b->hdr_blob_id > 0) {
+		drmModeDestroyPropertyBlob (b->drm.fd, b->hdr_blob_id);
+		b->hdr_blob_id = 0;
+	}
 	drmModeAtomicFree(req);
 	drm_pending_state_free(pending_state);
 	return ret;
@@ -7832,6 +7851,96 @@ static const struct weston_drm_virtual_output_api virt_api = {
 	drm_virtual_output_finish_frame
 };
 
+static void
+hdr10_metadata_destroy(struct wl_client *client,
+			  struct wl_resource *resource)
+{
+	wl_resource_destroy(resource);
+}
+
+static void
+hdr10_metadata_set_metadata(struct wl_client *client,
+			     struct wl_resource *resource,
+			     uint32_t eotf,
+				 uint32_t type,
+			     uint32_t display_primaries_red,
+			     uint32_t display_primaries_green,
+			     uint32_t display_primaries_blue,
+			     uint32_t white_point,
+			     uint32_t mastering_display_luminance,
+			     uint32_t max_cll,
+				 uint32_t max_fall)
+{
+	struct weston_compositor *compositor = wl_resource_get_user_data(resource);
+	struct drm_backend *b = to_drm_backend(compositor);
+	struct hdr_static_metadata hdr_metadata;
+
+	hdr_metadata.eotf = eotf & 0xffff;
+	hdr_metadata.type = type & 0xffff;
+	hdr_metadata.display_primaries_x[0] = (display_primaries_red >> 16) & 0xffff;
+	hdr_metadata.display_primaries_y[0] = display_primaries_red & 0xffff;
+	hdr_metadata.display_primaries_x[1] = (display_primaries_green >> 16) & 0xffff;
+	hdr_metadata.display_primaries_y[1] = display_primaries_green & 0xffff;
+	hdr_metadata.display_primaries_x[2] = (display_primaries_blue >> 16) & 0xffff;
+	hdr_metadata.display_primaries_y[2] = display_primaries_blue & 0xffff;
+	hdr_metadata.white_point_x = (white_point >> 16) & 0xffff;
+	hdr_metadata.white_point_y = white_point & 0xffff;
+	hdr_metadata.max_mastering_display_luminance =
+				(mastering_display_luminance >> 16) & 0xffff;
+	hdr_metadata.min_mastering_display_luminance =
+				mastering_display_luminance & 0xffff;
+	hdr_metadata.max_cll = max_cll & 0xffff;
+	hdr_metadata.max_fall = max_fall & 0xffff;
+
+	drmModeCreatePropertyBlob(b->drm.fd, &hdr_metadata, sizeof(hdr_metadata), &b->hdr_blob_id);
+}
+
+static const struct zwp_hdr10_metadata_v1_interface hdr10_metadata_interface = {
+	hdr10_metadata_destroy,
+	hdr10_metadata_set_metadata,
+};
+
+static void
+bind_hdr10_metadata(struct wl_client *client,
+		       void *data, uint32_t version, uint32_t id)
+{
+	struct wl_resource *resource;
+	struct weston_compositor *compositor = data;
+
+	resource = wl_resource_create(client, &zwp_hdr10_metadata_v1_interface,
+				      version, id);
+	if (resource == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
+	wl_resource_set_implementation(resource, &hdr10_metadata_interface,
+				       compositor, NULL);
+}
+
+static bool
+drm_backend_is_hdr_supported(struct weston_compositor *compositor)
+{
+	struct drm_output *output;
+	struct drm_head *head;
+
+	wl_list_for_each(output, &compositor->output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->props_conn[WDRM_CONNECTOR_HDR10_METADATA].prop_id > 0)
+				return true;
+		}
+	}
+
+	wl_list_for_each(output, &compositor->pending_output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->props_conn[WDRM_CONNECTOR_HDR10_METADATA].prop_id > 0)
+				return true;
+		}
+	}
+
+	return true;
+}
+
 static struct drm_backend *
 drm_backend_create(struct weston_compositor *compositor,
 		   struct weston_drm_backend_config *config)
@@ -8010,6 +8119,15 @@ drm_backend_create(struct weston_compositor *compositor,
 		if (linux_explicit_synchronization_setup(compositor) < 0)
 			weston_log("Error: initializing explicit "
 				   " synchronization support failed.\n");
+	}
+
+	if (drm_backend_is_hdr_supported(compositor)) {
+		if (!wl_global_create(compositor->wl_display, &zwp_hdr10_metadata_v1_interface, 1,
+				      compositor, bind_hdr10_metadata)) {
+			weston_log("Error: initializing hdr10 support failed\n");
+		}
+	} else {
+		weston_log("info: HDR is not support\n");
 	}
 
 	ret = weston_plugin_api_register(compositor, WESTON_DRM_OUTPUT_API_NAME,
