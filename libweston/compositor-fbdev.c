@@ -552,8 +552,6 @@ fbdev_output_enable(struct weston_output *base)
 
 	head = fbdev_output_get_head(output);
 
-
-
 	output->base.start_repaint_loop = fbdev_output_start_repaint_loop;
 	output->base.repaint = fbdev_output_repaint;
 
@@ -670,7 +668,7 @@ fbdev_head_create(struct fbdev_backend *backend, const char *device)
 	}
 	close(fb_fd);
 
-	weston_head_init(&head->base, "fbdev");
+	weston_head_init(&head->base, device);
 	weston_head_set_connection_status(&head->base, true);
 	weston_head_set_monitor_strings(&head->base, "unknown",
 					head->fb_info.id, NULL);
@@ -1029,9 +1027,14 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	if (backend->use_pixman) {
 		if (pixman_renderer_init(compositor) < 0)
 			goto out_launcher;
+		if (!fbdev_head_create(backend, param->device))
+			goto out_launcher;
 #if defined(ENABLE_IMXGPU)
 #if defined(ENABLE_IMXG2D)
 	} else if (backend->use_g2d) {
+		int i = 0, k = 0, count = 0;
+		int disp_count = 0;
+		char displays[5][32];
 		g2d_renderer = weston_load_module("g2d-renderer.so",
 						 "g2d_renderer_interface");
 		if (!g2d_renderer) {
@@ -1043,6 +1046,30 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			weston_log("g2d_renderer_create failed.\n");
 			goto out_launcher;
 		}
+
+		count = strlen(param->device);
+		for (i= 0; i < count; i++) {
+			if (param->device[i] == ',') {
+				displays[disp_count][k] = '\0';
+				disp_count++;
+				k = 0;
+				continue;
+			}
+			displays[disp_count][k++] = param->device[i];
+		}
+		displays[disp_count][k] = '\0';
+		disp_count++;
+		if(backend->clone_mode) {
+			if (!fbdev_head_create(backend, displays[0]))
+					goto out_launcher;
+		} else {
+			for(i = 0; i < disp_count; i++) {
+				if (!fbdev_head_create(backend, displays[i]))
+					goto out_launcher;
+			}
+		}
+		weston_log("param->device = %s, disp_count = %d, backend->clone_mode = %d\n",
+			param->device, disp_count, backend->clone_mode);
 #endif
 #if defined(ENABLE_OPENGL)
 	} else {
@@ -1077,6 +1104,8 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			weston_log("gl_renderer_create failed.\n");
 			goto out_launcher;
 		}
+		if (!fbdev_head_create(backend, param->device))
+			goto out_launcher;
 #endif
 #endif
 	}
@@ -1086,9 +1115,6 @@ fbdev_backend_create(struct weston_compositor *compositor,
 			weston_log("Error: initializing dmabuf "
 				   "support failed.\n");
 	}
-
-	if (!fbdev_head_create(backend, param->device))
-		goto out_launcher;
 
 	free(param->device);
 
