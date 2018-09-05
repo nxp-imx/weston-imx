@@ -346,6 +346,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	fb->width = dmabuf->attributes.width;
 	fb->height = dmabuf->attributes.height;
 	fb->modifier = dmabuf->attributes.modifier[0];
+	fb->dtrc_meta = dmabuf->attributes.dtrc_meta;
 	fb->size = 0;
 	fb->fd = backend->drm.fd;
 
