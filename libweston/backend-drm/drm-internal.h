@@ -321,6 +321,8 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	uint64_t dtrc_meta;
 };
 
 struct drm_buffer_fb {
@@ -436,6 +438,8 @@ struct drm_plane {
 	struct drm_property_info props[WDRM_PLANE__COUNT];
 	/* True if the plane's zpos_max < primary plane's zpos_min. */
 	bool is_underlay;
+
+	uint64_t dtrc_meta;
 
 	/* The last state submitted to the kernel for this plane. */
 	struct drm_plane_state *state_cur;
