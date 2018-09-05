@@ -334,12 +334,35 @@ params_create_immed(struct wl_client *client,
 			     format, flags);
 }
 
+static void
+params_add_dtrc_meta(struct wl_client *client,
+		    struct wl_resource *params_resource,
+		    uint32_t rfc_chroma_offset,
+		    uint32_t rfc_luma_offset)
+{
+	struct linux_dmabuf_buffer *buffer;
+
+	buffer = wl_resource_get_user_data(params_resource);
+	if (!buffer) {
+		wl_resource_post_error(params_resource,
+			ZWP_LINUX_BUFFER_PARAMS_V1_ERROR_ALREADY_USED,
+			"params was already used to create a wl_buffer");
+		return;
+	}
+
+	assert(buffer->params_resource == params_resource);
+	assert(!buffer->buffer_resource);
+
+	buffer->attributes.dtrc_meta =  rfc_luma_offset | ((uint64_t)rfc_chroma_offset << 32);
+}
+
 static const struct zwp_linux_buffer_params_v1_interface
 zwp_linux_buffer_params_implementation = {
 	params_destroy,
 	params_add,
 	params_create,
-	params_create_immed
+	params_create_immed,
+	params_add_dtrc_meta
 };
 
 static void

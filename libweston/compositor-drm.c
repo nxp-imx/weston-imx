@@ -142,6 +142,7 @@ enum wdrm_plane_property {
 	WDRM_PLANE_FB_ID,
 	WDRM_PLANE_CRTC_ID,
 	WDRM_PLANE_IN_FORMATS,
+	WDRM_PLANE_DTRC_META,
 	WDRM_PLANE__COUNT
 };
 
@@ -184,6 +185,7 @@ static const struct drm_property_info plane_props[] = {
 	[WDRM_PLANE_FB_ID] = { .name = "FB_ID", },
 	[WDRM_PLANE_CRTC_ID] = { .name = "CRTC_ID", },
 	[WDRM_PLANE_IN_FORMATS] = { .name = "IN_FORMATS" },
+	[WDRM_PLANE_DTRC_META] = { .name = "dtrc_table_ofs" },
 };
 
 /**
@@ -361,6 +363,8 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	uint64_t dtrc_meta;
 };
 
 struct drm_edid {
@@ -457,6 +461,8 @@ struct drm_plane {
 	struct drm_plane_state *state_cur;
 
 	struct wl_list link;
+
+	uint64_t dtrc_meta;
 
 	struct {
 		uint32_t format;
@@ -1125,6 +1131,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	fb->width = dmabuf->attributes.width;
 	fb->height = dmabuf->attributes.height;
 	fb->modifier = dmabuf->attributes.modifier[0];
+	fb->dtrc_meta = dmabuf->attributes.dtrc_meta;
 	fb->size = 0;
 	fb->fd = backend->drm.fd;
 
@@ -2634,6 +2641,14 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 				      plane_state->dest_w);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_H,
 				      plane_state->dest_h);
+
+		if (plane_state->fb && plane_state->fb->dtrc_meta != plane->dtrc_meta
+		    && plane->type == WDRM_PLANE_TYPE_OVERLAY
+			&& plane_state->fb->modifier != DRM_FORMAT_MOD_LINEAR)
+		{
+		        plane_add_prop(req, plane, WDRM_PLANE_DTRC_META, plane_state->fb->dtrc_meta);
+		        plane->dtrc_meta = plane_state->fb->dtrc_meta;
+		}
 
 		if (ret != 0) {
 			weston_log("couldn't set plane state\n");
