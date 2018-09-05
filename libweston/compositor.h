@@ -1037,6 +1037,9 @@ struct weston_backend {
 
 	void (*query_dmabuf_formats)(struct weston_compositor* compositor,
 					int **formats, int *num_formats);
+    void (*query_dmabuf_modifiers)(struct weston_compositor *compositor,
+                    int format, uint64_t **modifiers,
+                    int *num_modifiers);
 	bool (*import_dmabuf)(struct weston_compositor* compositor,
 					struct linux_dmabuf_buffer *dmabuf);
 };
