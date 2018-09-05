@@ -166,6 +166,7 @@ enum wdrm_plane_property {
 	WDRM_PLANE_IN_FENCE_FD,
 	WDRM_PLANE_FB_DAMAGE_CLIPS,
 	WDRM_PLANE_ZPOS,
+	WDRM_PLANE_DTRC_META,
 	WDRM_PLANE__COUNT
 };
 
@@ -370,6 +371,8 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	uint64_t dtrc_meta;
 };
 
 struct drm_buffer_fb {
@@ -489,6 +492,8 @@ struct drm_plane {
 	uint32_t plane_idx;
 
 	struct drm_property_info props[WDRM_PLANE__COUNT];
+
+	uint64_t dtrc_meta;
 
 	/* The last state submitted to the kernel for this plane. */
 	struct drm_plane_state *state_cur;
