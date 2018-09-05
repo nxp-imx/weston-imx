@@ -136,6 +136,7 @@ const struct drm_property_info plane_props[] = {
 		.enum_values = plane_color_range_enums,
 		.num_enum_values = WDRM_PLANE_COLOR_RANGE__COUNT,
 	},
+	[WDRM_PLANE_DTRC_META] = { .name = "dtrc_table_ofs" },
 };
 
 struct drm_property_enum_info dpms_state_enums[] = {
@@ -1520,6 +1521,13 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 
 		ret |= drm_plane_set_color_range(plane,
 						 plane_state->color_range, req);
+
+		if (plane_state->fb && plane_state->fb->dtrc_meta != plane->dtrc_meta
+		    && plane->type == WDRM_PLANE_TYPE_OVERLAY
+			&& plane_state->fb->modifier != DRM_FORMAT_MOD_LINEAR) {
+		    plane_add_prop(req, plane, WDRM_PLANE_DTRC_META, plane_state->fb->dtrc_meta);
+		    plane->dtrc_meta = plane_state->fb->dtrc_meta;
+		}
 
 		if (ret != 0) {
 			weston_log("couldn't set plane state\n");

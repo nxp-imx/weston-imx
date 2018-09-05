@@ -335,6 +335,8 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	uint64_t dtrc_meta;
 };
 
 struct drm_buffer_fb {
@@ -463,6 +465,8 @@ struct drm_plane {
 	uint32_t crtc_id;
 
 	struct drm_property_info props[WDRM_PLANE__COUNT];
+
+	uint64_t dtrc_meta;
 
 	/* The last state submitted to the kernel for this plane. */
 	struct drm_plane_state *state_cur;

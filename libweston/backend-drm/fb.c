@@ -492,6 +492,7 @@ bo_import_skip:
 	fb->width = attributes->width;
 	fb->height = attributes->height;
 	fb->modifier = attributes->modifier;
+	fb->dtrc_meta = attributes->dtrc_meta;
 	fb->size = 0;
 	fb->fd = device->drm.fd;
 
