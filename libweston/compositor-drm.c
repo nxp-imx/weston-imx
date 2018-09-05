@@ -3217,6 +3217,56 @@ drm_query_dmabuf_formats(struct weston_compositor *compositor, int **formats, in
 	}
 }
 
+static void
+drm_query_dmabuf_modifiers (struct weston_compositor *compositor, int format,
+                               uint64_t **modifiers, int *num_modifiers)
+{
+       struct drm_backend *b = to_drm_backend(compositor);
+       struct drm_plane *p;
+       uint64_t has_prime;
+       uint32_t i, j;
+       int ret;
+
+       assert(modifiers);
+       assert(num_modifiers);
+
+       *num_modifiers = 0;
+
+       ret = drmGetCap (b->drm.fd, DRM_CAP_PRIME, &has_prime);
+       if (ret || !(bool) (has_prime & DRM_PRIME_CAP_IMPORT)) {
+               weston_log("drm backend not support import DMABUF\n");
+               return;
+       }
+
+       wl_list_for_each(p, &b->plane_list, link) {
+               if (p->type != WDRM_PLANE_TYPE_OVERLAY)
+                       continue;
+
+               for (i = 0; i < p->count_formats; i++) {
+
+                       if (p->formats[i].format != format)
+                               continue;
+
+                       if (p->formats[i].count_modifiers <= 0)
+                               continue;
+
+                       *modifiers = calloc(p->formats[i].count_modifiers, sizeof(uint64_t));
+                       if (*modifiers == NULL) {
+                               *num_modifiers = 0;
+                               return;
+                       }
+
+                       for (j = 0; j < p->formats[i].count_modifiers; j++) {
+                               (*modifiers)[j] = p->formats[i].modifiers[j];
+                       }
+                       *num_modifiers = p->formats[i].count_modifiers;
+               }
+
+               if (*num_modifiers > 0)
+                       break;
+       }
+}
+
 /**
  * Test if drm driver can import dmabuf
  *
@@ -7324,6 +7374,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->base.repaint_cancel = drm_repaint_cancel;
 	b->base.create_output = drm_output_create;
 	b->base.query_dmabuf_formats = drm_query_dmabuf_formats;
+	b->base.query_dmabuf_modifiers = drm_query_dmabuf_modifiers;
 	b->base.import_dmabuf = drm_import_dmabuf;
 
 	weston_setup_vt_switch_bindings(compositor);
