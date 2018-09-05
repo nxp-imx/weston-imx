@@ -169,6 +169,7 @@ enum wdrm_plane_property {
 	WDRM_PLANE_IN_FORMATS,
 	WDRM_PLANE_IN_FENCE_FD,
 	WDRM_PLANE_FB_DAMAGE_CLIPS,
+	WDRM_PLANE_DTRC_META,
 	WDRM_PLANE__COUNT
 };
 
@@ -317,6 +318,8 @@ struct drm_fb {
 
 	/* Used by dumb fbs */
 	void *map;
+
+	uint64_t dtrc_meta;
 };
 
 struct drm_edid {
@@ -418,6 +421,8 @@ struct drm_plane {
 	struct drm_plane_state *state_cur;
 
 	struct wl_list link;
+
+	uint64_t dtrc_meta;
 
 	struct {
 		uint32_t format;
