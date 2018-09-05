@@ -74,6 +74,7 @@ const struct drm_property_info plane_props[] = {
 	[WDRM_PLANE_IN_FENCE_FD] = { .name = "IN_FENCE_FD" },
 	[WDRM_PLANE_FB_DAMAGE_CLIPS] = { .name = "FB_DAMAGE_CLIPS" },
 	[WDRM_PLANE_ZPOS] = { .name = "zpos" },
+	[WDRM_PLANE_DTRC_META] = { .name = "dtrc_table_ofs" },
 };
 
 struct drm_property_enum_info dpms_state_enums[] = {
@@ -1098,6 +1099,13 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_ZPOS,
 					      plane_state->zpos);
+
+		if (plane_state->fb && plane_state->fb->dtrc_meta != plane->dtrc_meta
+		    && plane->type == WDRM_PLANE_TYPE_OVERLAY
+			&& plane_state->fb->modifier != DRM_FORMAT_MOD_LINEAR) {
+		    plane_add_prop(req, plane, WDRM_PLANE_DTRC_META, plane_state->fb->dtrc_meta);
+		    plane->dtrc_meta = plane_state->fb->dtrc_meta;
+		}
 
 		if (ret != 0) {
 			weston_log("couldn't set plane state\n");
