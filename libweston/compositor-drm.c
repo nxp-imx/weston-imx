@@ -2646,7 +2646,7 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 				      plane_state->dest_w);
 		ret |= plane_add_prop(req, plane, WDRM_PLANE_CRTC_H,
 				      plane_state->dest_h);
-		if (in_fence_fd > 0)
+		if (in_fence_fd > 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY)
 			ret |= plane_add_prop(req, plane, WDRM_PLANE_IN_FENCE_FD, in_fence_fd);
 
 		if (plane_state->fb && plane_state->fb->dtrc_meta != plane->dtrc_meta
