@@ -1109,7 +1109,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		.num_fds = dmabuf->attributes.n_planes,
 		.modifier = dmabuf->attributes.modifier[0],
 	};
-	int i;
+	int i, ret = -1;
 	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
 
 	/* XXX: TODO:
@@ -1230,8 +1230,7 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 	}
 
 add_fb:
-	if (drm_fb_addfb(fb) != 0)
-		goto err_free;
+	ret = drm_fb_addfb(fb);
 
 	if (gem_handle[0] != 0) {
 		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
@@ -1239,6 +1238,9 @@ add_fb:
 			drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
 		}
 	}
+
+	if (ret != 0)
+		goto err_free;
 
 	return fb;
 
