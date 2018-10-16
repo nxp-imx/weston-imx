@@ -2233,31 +2233,6 @@ gl_renderer_import_dmabuf(struct weston_compositor *ec,
 	return true;
 }
 
-static bool
-import_known_dmabuf(struct gl_renderer *gr,
-                    struct dmabuf_image *image)
-{
-	switch (image->import_type) {
-	case IMPORT_TYPE_DIRECT:
-		image->images[0] = import_simple_dmabuf(gr, &image->dmabuf->attributes);
-		if (!image->images[0])
-			return false;
-		image->num_images = 1;
-		break;
-
-	case IMPORT_TYPE_GL_CONVERSION:
-		if (!import_yuv_dmabuf(gr, image))
-			return false;
-		break;
-
-	default:
-		weston_log("Invalid import type for dmabuf\n");
-		return false;
-	}
-
-	return true;
-}
-
 static void
 gl_renderer_attach_dmabuf(struct weston_surface *surface,
 			  struct weston_buffer *buffer,
@@ -2267,7 +2242,6 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 	struct gl_surface_state *gs = get_surface_state(surface);
 	struct dmabuf_image *image;
 	int i;
-	int ret;
 
 	/**
 	 * if backend can handle dmabuf directly, then we only need set
@@ -2316,16 +2290,6 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 
 	/* The dmabuf_image should have been created during the import */
 	assert(image != NULL);
-
-	for (i = 0; i < image->num_images; ++i) {
-		ret = egl_image_unref(image->images[i]);
-		assert(ret == 0);
-	}
-
-	if (!import_known_dmabuf(gr, image)) {
-		linux_dmabuf_buffer_send_server_error(dmabuf, "EGL dmabuf import failed");
-		return;
-	}
 
 	gs->num_images = image->num_images;
 	for (i = 0; i < gs->num_images; ++i)
