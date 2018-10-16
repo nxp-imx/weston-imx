@@ -1089,6 +1089,21 @@ drm_fb_destroy_dmabuf(struct drm_fb *fb)
 	drm_fb_destroy(fb);
 }
 
+static void
+drm_close_gem_handle(struct linux_dmabuf_buffer *dmabuf)
+{
+	struct drm_backend *b = to_drm_backend(dmabuf->compositor);
+	int i;
+
+	if (dmabuf->gem_handles[0] != 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			struct drm_gem_close arg = { dmabuf->gem_handles[i], };
+			drmIoctl (b->drm.fd, DRM_IOCTL_GEM_CLOSE, &arg);
+			dmabuf->gem_handles[i] = 0;
+		}
+	}
+}
+
 static struct drm_fb *
 drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		       struct drm_backend *backend, bool is_opaque)
@@ -1168,17 +1183,23 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 		goto err_free;
 	}
 
-	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
-		int ret;
-		ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
-		if (ret) {
-			weston_log ("got gem_handle %x\n", gem_handle[i]);
-			goto err_free;
+	if (dmabuf->gem_handles[0] == 0) {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+			int ret;
+			ret = drmPrimeFDToHandle (fb->fd, dmabuf->attributes.fd[i], &gem_handle[i]);
+			if (ret) {
+				weston_log ("got gem_handle %x\n", gem_handle[i]);
+				goto err_free;
+			}
+			fb->handles[i] = dmabuf->gem_handles[i] = gem_handle[i];
 		}
-		fb->handles[i] = gem_handle[i];
+		linux_dmabuf_buffer_gem_handle_close_cb (dmabuf, drm_close_gem_handle);
+	} else {
+		for (i = 0; i < dmabuf->attributes.n_planes; i++)
+			fb->handles[i] = dmabuf->gem_handles[i];
 	}
 
-	if (gem_handle[0] != 0)
+	if (fb->handles[0] != 0)
 		goto add_fb;
 
 	static_assert(ARRAY_LENGTH(import_mod.fds) ==
@@ -1231,13 +1252,6 @@ drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
 
 add_fb:
 	ret = drm_fb_addfb(fb);
-
-	if (gem_handle[0] != 0) {
-		for (i = 0; i < dmabuf->attributes.n_planes; i++) {
-			struct drm_gem_close arg = { gem_handle[i], };
-			drmIoctl (fb->fd, DRM_IOCTL_GEM_CLOSE, &arg);
-		}
-	}
 
 	if (ret != 0)
 		goto err_free;
