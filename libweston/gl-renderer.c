@@ -197,6 +197,7 @@ struct gl_renderer {
 	struct weston_renderer base;
 	int fragment_shader_debug;
 	int fan_debug;
+	int sync_post;
 	struct weston_binding *fragment_binding;
 	struct weston_binding *fan_binding;
 
@@ -2308,6 +2309,7 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 	gs->height = buffer->height;
 	gs->buffer_type = BUFFER_TYPE_EGL;
 	gs->y_inverted = buffer->y_inverted;
+	gr->sync_post = 1;
 }
 
 static void
@@ -2547,6 +2549,8 @@ surface_state_handle_surface_destroy(struct wl_listener *listener, void *data)
 			  surface_destroy_listener);
 
 	gr = get_renderer(gs->surface->compositor);
+
+	gr->sync_post = 0;
 
 	surface_state_destroy(gs, gr);
 }
@@ -3445,6 +3449,7 @@ gl_renderer_display_create(struct weston_compositor *ec, EGLenum platform,
 		gl_renderer_surface_get_content_size;
 	gr->base.surface_copy_content = gl_renderer_surface_copy_content;
 	gr->egl_display = NULL;
+	gr->sync_post = 0;
 
 	/* extension_suffix is supported */
 	if (supports) {
@@ -3779,6 +3784,12 @@ gl_renderer_setup(struct weston_compositor *ec, EGLSurface egl_surface)
 	return 0;
 }
 
+int gl_renderer_sync_post(struct weston_compositor *ec)
+{
+	struct gl_renderer *gr = get_renderer(ec);
+	return gr->sync_post;
+}
+
 WL_EXPORT struct gl_renderer_interface gl_renderer_interface = {
 	.opaque_attribs = gl_renderer_opaque_attribs,
 	.alpha_attribs = gl_renderer_alpha_attribs,
@@ -3789,5 +3800,6 @@ WL_EXPORT struct gl_renderer_interface gl_renderer_interface = {
 	.output_destroy = gl_renderer_output_destroy,
 	.output_surface = gl_renderer_output_surface,
 	.output_set_border = gl_renderer_output_set_border,
-	.print_egl_error_state = gl_renderer_print_egl_error_state
+	.print_egl_error_state = gl_renderer_print_egl_error_state,
+	.sync_post = gl_renderer_sync_post
 };

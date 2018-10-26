@@ -114,5 +114,7 @@ struct gl_renderer_interface {
 				  int32_t tex_width, unsigned char *data);
 
 	void (*print_egl_error_state)(void);
+
+	int (*sync_post)(struct weston_compositor *ec);
 };
 

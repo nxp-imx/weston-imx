@@ -2595,8 +2595,14 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	int ret = 0;
 	int in_fence_fd = -1;
 
-	if(output->gbm_surface)
-		in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
+	if(output->gbm_surface){
+		if(gl_renderer->sync_post(output->base.compositor) == 0) {
+			gbm_surface_set_sync_post(output->gbm_surface, 0);
+			in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
+		} else {
+			gbm_surface_set_sync_post(output->gbm_surface, 1);
+		}
+	}
 	if (state->dpms != output->state_cur->dpms)
 		*flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
 
