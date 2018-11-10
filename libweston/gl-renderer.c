@@ -3784,7 +3784,8 @@ gl_renderer_setup(struct weston_compositor *ec, EGLSurface egl_surface)
 	return 0;
 }
 
-int gl_renderer_sync_post(struct weston_compositor *ec)
+static int
+gl_renderer_sync_post(struct weston_compositor * ec)
 {
 	struct gl_renderer *gr = get_renderer(ec);
 	return gr->sync_post;
