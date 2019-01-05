@@ -8135,7 +8135,6 @@ drm_backend_create(struct weston_compositor *compositor,
 			    compositor, b->udev, seat_id,
 			    config->configure_device) < 0) {
 		weston_log("failed to create input devices\n");
-		goto err_sprite;
 	}
 
 	if (drm_backend_create_heads(b, drm_device) < 0) {
@@ -8231,7 +8230,6 @@ err_drm_source:
 	wl_event_source_remove(b->drm_source);
 err_udev_input:
 	udev_input_destroy(&b->input);
-err_sprite:
 	if (b->gbm)
 		gbm_device_destroy(b->gbm);
 	destroy_sprites(b);
