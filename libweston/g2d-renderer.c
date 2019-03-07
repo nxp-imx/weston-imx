@@ -613,7 +613,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 		{
 			srcRect->top += floorf((float)(-dstrect->top) * scale_v);
 			dstrect->top = 0;
-			if(srcRect->top <= srcRect->bottom)
+			if(srcRect->top >= srcRect->bottom)
 				return;
 		}
 		if(dstrect->bottom > dstHeight)
