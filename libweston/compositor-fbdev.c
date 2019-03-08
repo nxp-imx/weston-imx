@@ -52,6 +52,18 @@
 #include "libinput-seat.h"
 #include "presentation-time-server-protocol.h"
 
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
+#include "gl-renderer.h"
+#endif
+#if defined(ENABLE_IMXG2D)
+#include "g2d-renderer.h"
+#endif
+#endif
+
+#include "linux-dmabuf.h"
+#include "linux-dmabuf-unstable-v1-server-protocol.h"
+
 struct fbdev_backend {
 	struct weston_backend base;
 	struct weston_compositor *compositor;
@@ -61,6 +73,15 @@ struct fbdev_backend {
 	struct udev_input input;
 	uint32_t output_transform;
 	struct wl_listener session_listener;
+	int use_pixman;
+#if defined(ENABLE_IMXGPU)
+	NativeDisplayType display;
+#if defined(ENABLE_IMXG2D)
+	int use_g2d;
+	int clone_mode;
+	char clone_device[50];
+#endif
+#endif
 };
 
 struct fbdev_screeninfo {
@@ -99,7 +120,20 @@ struct fbdev_output {
 
 	/* pixman details. */
 	pixman_image_t *hw_surface;
+#if defined(ENABLE_IMXGPU)
+	NativeDisplayType display;
+	NativeWindowType  window;
+#endif
 };
+
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
+struct gl_renderer_interface *gl_renderer;
+#endif
+#if defined(ENABLE_IMXG2D)
+struct g2d_renderer_interface *g2d_renderer;
+#endif
+#endif
 
 static const char default_seat[] = "seat0";
 
@@ -141,8 +175,7 @@ fbdev_output_start_repaint_loop(struct weston_output *output)
 }
 
 static int
-fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage,
-		     void *repaint_data)
+fbdev_output_repaint_pixman(struct weston_output *base, pixman_region32_t *damage)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
 	struct weston_compositor *ec = output->base.compositor;
@@ -164,6 +197,27 @@ fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage,
 	 * refresh rate is given in mHz and the interval in ms. */
 	wl_event_source_timer_update(output->finish_frame_timer,
 	                             1000000 / output->mode.refresh);
+
+	return 0;
+}
+
+static int
+fbdev_output_repaint(struct weston_output *base, pixman_region32_t *damage,
+		     void *repaint_data)
+{
+	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *fbb = output->backend;
+	struct weston_compositor *ec = fbb->compositor;
+	if (fbb->use_pixman) {
+		fbdev_output_repaint_pixman(base,damage);
+	} else {
+		ec->renderer->repaint_output(base, damage);
+		/* Update the damage region. */
+		pixman_region32_subtract(&ec->primary_plane.damage,
+	                         &ec->primary_plane.damage, damage);
+		wl_event_source_timer_update(output->finish_frame_timer,
+                                     1000000 / output->mode.refresh);
+	}
 
 	return 0;
 }
@@ -222,8 +276,9 @@ calculate_pixman_format(struct fb_var_screeninfo *vinfo,
 	switch(finfo->visual) {
 		case FB_VISUAL_TRUECOLOR:
 		case FB_VISUAL_DIRECTCOLOR:
+			/* vinfo->grayscale != 0 in 8mqevk board
 			if (vinfo->grayscale != 0)
-				return 0;
+				return 0;*/
 		break;
 		default:
 			return 0;
@@ -409,14 +464,6 @@ fbdev_frame_buffer_open(const char *fb_dev,
 		return -1;
 	}
 
-	/* Attempt to wake up the framebuffer device, needed for secondary
-	 * framebuffer devices */
-	if (fbdev_wakeup_screen(fd, screen_info) < 0) {
-		weston_log("Failed to activate framebuffer display. "
-		           "Attempting to open output anyway.\n");
-	}
-
-
 	return fd;
 }
 
@@ -517,6 +564,7 @@ fbdev_output_attach_head(struct weston_output *output_base,
 }
 
 static void fbdev_output_destroy(struct weston_output *base);
+static int fbdev_output_disable(struct weston_output *base);
 
 static int
 fbdev_output_enable(struct weston_output *base)
@@ -529,24 +577,55 @@ fbdev_output_enable(struct weston_output *base)
 
 	head = fbdev_output_get_head(output);
 
-	/* Create the frame buffer. */
-	fb_fd = fbdev_frame_buffer_open(head->device, &head->fb_info);
-	if (fb_fd < 0) {
-		weston_log("Creating frame buffer failed.\n");
-		return -1;
-	}
-
-	if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
-		weston_log("Mapping frame buffer failed.\n");
-		return -1;
-	}
-
 	output->base.start_repaint_loop = fbdev_output_start_repaint_loop;
 	output->base.repaint = fbdev_output_repaint;
 
-	if (pixman_renderer_output_create(&output->base,
+	if (backend->use_pixman) {
+		/* Create the frame buffer. */
+		fb_fd = fbdev_frame_buffer_open(head->device, &head->fb_info);
+		if (fb_fd < 0) {
+			weston_log("Creating frame buffer failed.\n");
+			return -1;
+		}
+
+		if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
+			weston_log("Mapping frame buffer failed.\n");
+			return -1;
+		}
+		if (pixman_renderer_output_create(&output->base,
 					PIXMAN_RENDERER_OUTPUT_USE_SHADOW) < 0)
-		goto out_hw_surface;
+			goto out_hw_surface;
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if (backend->use_g2d) {
+		const char *g2d_device = head->device;
+		if (backend->clone_mode)
+			g2d_device = &(backend->clone_device[0]);
+
+		if (g2d_renderer->fbdev_output_create(&output->base,
+					backend->compositor->wl_display,
+					g2d_device) < 0) {
+			weston_log("g2d_renderer_output_create failed.\n");
+			goto out;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
+	} else {
+		output->window = fbCreateWindow(backend->display, -1, -1, 0, 0);
+		if (output->window == NULL) {
+			fprintf(stderr, "failed to create window\n");
+			return 0;
+		}
+		if (gl_renderer->output_window_create(&output->base,
+						   (EGLNativeWindowType)output->window, (void *)output->window,
+						   gl_renderer->opaque_attribs,
+						   NULL, 0) < 0) {
+			weston_log("gl_renderer_output_create failed.\n");
+			goto out;
+		}
+#endif
+#endif
+	}
 
 	loop = wl_display_get_event_loop(backend->compositor->wl_display);
 	output->finish_frame_timer =
@@ -562,6 +641,7 @@ fbdev_output_enable(struct weston_output *base)
 out_hw_surface:
 	fbdev_frame_buffer_unmap(output);
 
+out:
 	return -1;
 }
 
@@ -569,6 +649,7 @@ static int
 fbdev_output_disable(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *backend = to_fbdev_backend(base->compositor);
 
 	if (!base->enabled)
 		return 0;
@@ -576,9 +657,20 @@ fbdev_output_disable(struct weston_output *base)
 	wl_event_source_remove(output->finish_frame_timer);
 	output->finish_frame_timer = NULL;
 
-	pixman_renderer_output_destroy(&output->base);
-	fbdev_frame_buffer_unmap(output);
-
+	if (backend->use_pixman) {
+		pixman_renderer_output_destroy(&output->base);
+		fbdev_frame_buffer_unmap(output);
+	}
+#if defined(ENABLE_IMXGPU)
+	if(output->window) {
+		fbDestroyWindow(output->window);
+		output->window = NULL;
+	}
+	if(output->display) {
+		fbDestroyDisplay(output->display);
+		output->display = NULL;
+	}
+#endif
 	return 0;
 }
 
@@ -602,7 +694,7 @@ fbdev_head_create(struct fbdev_backend *backend, const char *device)
 	}
 	close(fb_fd);
 
-	weston_head_init(&head->base, "fbdev");
+	weston_head_init(&head->base, device);
 	weston_head_set_connection_status(&head->base, true);
 	weston_head_set_monitor_strings(&head->base, "unknown",
 					head->fb_info.id, NULL);
@@ -662,10 +754,26 @@ static void
 fbdev_output_destroy(struct weston_output *base)
 {
 	struct fbdev_output *output = to_fbdev_output(base);
+	struct fbdev_backend *backend = output->backend;
 
 	weston_log("Destroying fbdev output.\n");
 
 	fbdev_output_disable(base);
+
+	if (backend->use_pixman) {
+		if (base->renderer_state != NULL)
+			pixman_renderer_output_destroy(base);
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if (backend->use_g2d) {
+		g2d_renderer->output_destroy(base);
+#endif
+#if defined(ENABLE_OPENGL)
+	} else {
+		gl_renderer->output_destroy(base);
+#endif
+#endif
+	}
 
 	/* Remove the output. */
 	weston_output_release(&output->base);
@@ -730,9 +838,11 @@ fbdev_output_reenable(struct fbdev_backend *backend,
 	}
 
 	/* Map the device if it has the same details as before. */
-	if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
-		weston_log("Mapping frame buffer failed.\n");
-		return -1;
+	if (backend->use_pixman) {
+		if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
+			weston_log("Mapping frame buffer failed.\n");
+			return -1;
+		}
 	}
 
 	return 0;
@@ -930,14 +1040,107 @@ fbdev_backend_create(struct weston_compositor *compositor,
 	backend->base.create_output = fbdev_output_create;
 
 	backend->prev_state = WESTON_COMPOSITOR_ACTIVE;
+	backend->use_pixman = param->use_pixman;
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	backend->use_g2d = param->use_g2d;
+	backend->clone_mode = param->clone_mode;
+	memcpy(&backend->clone_device[0], param->device, strlen(param->device));
+#endif
+	backend->output_transform = param->output_transform;
 
 	weston_setup_vt_switch_bindings(compositor);
 
-	if (pixman_renderer_init(compositor) < 0)
-		goto out_launcher;
+	if (backend->use_pixman) {
+		if (pixman_renderer_init(compositor) < 0)
+			goto out_launcher;
+		if (!fbdev_head_create(backend, param->device))
+			goto out_launcher;
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if (backend->use_g2d) {
+		int i = 0, k = 0, count = 0;
+		int disp_count = 0;
+		char displays[5][32];
+		g2d_renderer = weston_load_module("g2d-renderer.so",
+						 "g2d_renderer_interface");
+		if (!g2d_renderer) {
+			weston_log("could not load g2d renderer\n");
+			goto out_launcher;
+		}
 
-	if (!fbdev_head_create(backend, param->device))
-		goto out_launcher;
+		if (g2d_renderer->create(backend->compositor) < 0) {
+			weston_log("g2d_renderer_create failed.\n");
+			goto out_launcher;
+		}
+
+		count = strlen(param->device);
+		for (i= 0; i < count; i++) {
+			if (param->device[i] == ',') {
+				displays[disp_count][k] = '\0';
+				disp_count++;
+				k = 0;
+				continue;
+			}
+			displays[disp_count][k++] = param->device[i];
+		}
+		displays[disp_count][k] = '\0';
+		disp_count++;
+		if(backend->clone_mode) {
+			if (!fbdev_head_create(backend, displays[0]))
+					goto out_launcher;
+		} else {
+			for(i = 0; i < disp_count; i++) {
+				if (!fbdev_head_create(backend, displays[i]))
+					goto out_launcher;
+			}
+		}
+		weston_log("param->device = %s, disp_count = %d, backend->clone_mode = %d\n",
+			param->device, disp_count, backend->clone_mode);
+#endif
+#if defined(ENABLE_OPENGL)
+	} else {
+		gl_renderer = weston_load_module("gl-renderer.so",
+						 "gl_renderer_interface");
+		if (!gl_renderer) {
+			weston_log("could not load gl renderer\n");
+			goto out_launcher;
+		}
+
+		/* determine which framebuffer we got so we don't use
+		 * FB_FRAMBUFFER_%d to override default displayId
+		 */
+		int index = -1;
+		sscanf(param->device, "/dev/fb%d", &index);
+
+		if (index < 0) {
+			weston_log("Failed to get proper frambuffer\n");
+			goto out_launcher;
+		}
+
+		backend->display = fbGetDisplayByIndex(index);
+		if (backend->display == NULL) {
+			weston_log("fbGetDisplay failed.\n");
+			goto out_launcher;
+		}
+		if (gl_renderer->display_create(compositor, NO_EGL_PLATFORM,
+					backend->display,
+					NULL,
+					gl_renderer->opaque_attribs,
+					NULL, 0) < 0) {
+			weston_log("gl_renderer_create failed.\n");
+			goto out_launcher;
+		}
+		if (!fbdev_head_create(backend, param->device))
+			goto out_launcher;
+#endif
+#endif
+	}
+
+	if (compositor->renderer->import_dmabuf) {
+		if (linux_dmabuf_setup(compositor) < 0)
+			weston_log("Error: initializing dmabuf "
+				   "support failed.\n");
+	}
 
 	free(param->device);
 
@@ -965,6 +1168,20 @@ config_init_to_defaults(struct weston_fbdev_backend_config *config)
 {
 	config->tty = 0; /* default to current tty */
 	config->device = NULL;
+	config->output_transform = WL_OUTPUT_TRANSFORM_NORMAL;
+#if !defined(ENABLE_IMXGPU) || !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config->use_pixman = 1;
+#else
+	config->use_pixman = 0;
+#endif
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+#if !defined(ENABLE_OPENGL)
+	config->use_g2d = 1;
+#else
+	config->use_g2d = 0;
+#endif
+	config->clone_mode = 0;
+#endif
 	config->seat_id = NULL;
 }
 
