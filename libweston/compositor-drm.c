@@ -3730,6 +3730,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		bool totally_occluded = false;
 		bool overlay_occluded = false;
 		struct linux_dmabuf_buffer *dmabuf = NULL;
+		pixman_region32_init(&clipped_view);
 
 		/* If this view doesn't touch our output at all, there's no
 		 * reason to do anything with it. */
@@ -3761,7 +3762,6 @@ drm_output_propose_state(struct weston_output *output_base,
 		}
 
 		/* Ignore views we know to be totally occluded. */
-		pixman_region32_init(&clipped_view);
 		pixman_region32_intersect(&clipped_view,
 					  &ev->transform.boundingbox,
 					  &output->base.region);
