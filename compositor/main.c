@@ -2350,9 +2350,7 @@ load_drm_backend(struct weston_compositor *c,
 	int use_shadow;
 	int ret = 0;
 	int use_pixman_config_ = 0;
-	int use_g2d_config_ = 0;
 	int32_t use_pixman_ = 0;
-	int32_t use_g2d_ = 0;
 
 	wet->drm_use_current_mode = false;
 
@@ -2360,10 +2358,6 @@ load_drm_backend(struct weston_compositor *c,
 	weston_config_section_get_bool(section, "use-pixman", &use_pixman_config_,
 				       use_pixman_config_);
 	use_pixman_ = use_pixman_config_;
-
-	weston_config_section_get_bool(section, "use-g2d", &use_g2d_config_,
-			               use_g2d_config_);
-	use_g2d_ = use_g2d_config_;
 
 	const struct weston_option options[] = {
 		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
@@ -2375,7 +2369,7 @@ load_drm_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &use_pixman_ },
 #endif
 #if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
-		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &use_g2d_ },
+		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
 #endif
 #endif
 	};
@@ -2385,7 +2379,7 @@ load_drm_backend(struct weston_compositor *c,
 	config.use_pixman = use_pixman_;
 
 #elif !defined(ENABLE_OPENGL)
-	config.use_g2d = use_g2d_;
+	config.use_g2d = 1;
 #endif
 	section = weston_config_get_section(wc, "core", NULL, NULL);
 	weston_config_section_get_string(section,
