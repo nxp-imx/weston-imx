@@ -2349,6 +2349,9 @@ load_drm_backend(struct weston_compositor *c,
 	struct wet_compositor *wet = to_wet_compositor(c);
 	int use_shadow;
 	int ret = 0;
+#if defined(ENABLE_IMXG2D)
+	uint32_t use_g2d;
+#endif
 	int use_pixman_config_ = 0;
 	int32_t use_pixman_ = 0;
 
@@ -2388,6 +2391,10 @@ load_drm_backend(struct weston_compositor *c,
 	weston_config_section_get_uint(section, "pageflip-timeout",
 	                               &config.pageflip_timeout, 0);
 	weston_config_section_get_bool(section, "pixman-shadow", &use_shadow, 1);
+#if defined(ENABLE_IMXG2D)
+	weston_config_section_get_uint(section, "use-g2d", &use_g2d, 0);
+	config.use_g2d = config.use_g2d || use_g2d;
+#endif
 	config.use_pixman_shadow = use_shadow;
 
 	config.base.struct_version = WESTON_DRM_BACKEND_CONFIG_VERSION;
@@ -2600,6 +2607,10 @@ load_fbdev_backend(struct weston_compositor *c,
 {
 	struct weston_fbdev_backend_config config = {{ 0, }};
 	int ret = 0;
+#if defined(ENABLE_IMXG2D)
+	struct weston_config_section *section;
+	uint32_t use_g2d;
+#endif
 
 	const struct weston_option fbdev_options[] = {
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
@@ -2625,6 +2636,13 @@ load_fbdev_backend(struct weston_compositor *c,
 #elif !defined(ENABLE_OPENGL)
 	config.use_g2d = 1;
 #endif
+
+#if defined(ENABLE_IMXG2D)
+	section = weston_config_get_section(wc, "core", NULL, NULL);
+	weston_config_section_get_uint(section, "use-g2d", &use_g2d, 0);
+	config.use_g2d = config.use_g2d || use_g2d;
+#endif
+
 	config.base.struct_version = WESTON_FBDEV_BACKEND_CONFIG_VERSION;
 	config.base.struct_size = sizeof(struct weston_fbdev_backend_config);
 	config.configure_device = configure_input_device;
