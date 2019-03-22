@@ -1,6 +1,7 @@
 [core]
 # i.MX: Disable idle timeout
 idle-time=0
+#use-g2d=1
 
 #[output]
 #name=HDMI-A-1
