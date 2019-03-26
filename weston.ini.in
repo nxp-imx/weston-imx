@@ -1,13 +1,16 @@
 [core]
-# i.MX: Disable idle timeout
+#gbm-format=argb8888
 idle-time=0
 #use-g2d=1
+#xwayland=true
+
+#[shell]
+#size=1920x1080
 
 #[output]
 #name=HDMI-A-1
 #mode=1920x1080@60
 #transform=90
-
 
 #[output]
 #name=HDMI-A-2
