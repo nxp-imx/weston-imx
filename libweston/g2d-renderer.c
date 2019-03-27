@@ -1261,6 +1261,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	struct g2d_surface_state *gs = get_surface_state(es);
 	int alignedWidth = 0, alignedHeight = 0;
 	enum g2d_format g2dFormat;
+	uint64_t paddr2 = 0;
 	gctUINT32 paddr = 0;
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
@@ -1272,11 +1273,17 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if (g2dFormat < 0)
 		return;
 
-	if(gs->dma_buf)
-		g2d_free(gs->dma_buf);
-	gs->dma_buf = g2d_buf_from_fd(dmabuf->attributes.fd[0]);
+	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
+		paddr2 = (uint64_t)linux_dmabuf_buffer_get_user_data(dmabuf);
+		paddr = paddr2 >> 32;
+	} else {
+		if(gs->dma_buf)
+			g2d_free(gs->dma_buf);
+		gs->dma_buf = g2d_buf_from_fd(dmabuf->attributes.fd[0]);
 
-	paddr = gs->dma_buf->buf_paddr;
+		paddr = gs->dma_buf->buf_paddr;
+	}
+
 	switch(g2dFormat){
 		case G2D_I420:
 			gs->g2d_surface.base.planes[0] = paddr;
@@ -1285,7 +1292,10 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 			break;
 		case G2D_NV12:
 			gs->g2d_surface.base.planes[0] = paddr;
-			gs->g2d_surface.base.planes[1] = paddr + dmabuf->attributes.offset[1];
+			if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED)
+				gs->g2d_surface.base.planes[1] = paddr2 & 0xFFFFFFFF;
+			else
+				gs->g2d_surface.base.planes[1] = paddr + dmabuf->attributes.offset[1];
 			break;
 		case G2D_YUYV:
 		case G2D_RGB565:
@@ -1304,11 +1314,16 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gs->g2d_surface.base.top  = 0;
 	gs->g2d_surface.base.right	= buffer->width;
 	gs->g2d_surface.base.bottom = buffer->height;
-	gs->g2d_surface.base.stride = alignedWidth;
 	gs->g2d_surface.base.width	= alignedWidth;
 	gs->g2d_surface.base.height = alignedHeight;
 	gs->g2d_surface.base.rot	= G2D_ROTATION_0;
-	gs->g2d_surface.tiling = G2D_LINEAR;
+	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
+		gs->g2d_surface.base.stride = dmabuf->attributes.stride[0];
+		gs->g2d_surface.tiling = G2D_AMPHION_TILED;
+	} else {
+		gs->g2d_surface.base.stride = alignedWidth;
+		gs->g2d_surface.tiling = G2D_LINEAR;
+	}
 	gs->g2d_surface.base.format = g2dFormat;
 }
 
@@ -1349,6 +1364,7 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 {
 	struct g2d_buf *g2dBuf = NULL;
 	enum g2d_format g2dFormat;
+	uint64_t paddr = 0;
 
 	if (!dmabuf)
 		return false;
@@ -1359,10 +1375,26 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 
 	g2dBuf = g2d_buf_from_fd(dmabuf->attributes.fd[0]);
 
+	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
+		paddr = ((uint64_t)g2dBuf->buf_paddr) << 32;
+
+		if(!g2dBuf)
+			return false;
+		else
+			g2d_free(g2dBuf);
+
+		g2dBuf = g2d_buf_from_fd(dmabuf->attributes.fd[1]);
+
+		paddr |= (uint64_t)g2dBuf->buf_paddr & 0xFFFFFFFF;
+	}
+
 	if(!g2dBuf)
 		return false;
 	else
 		g2d_free(g2dBuf);
+
+	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED)
+		linux_dmabuf_buffer_set_user_data(dmabuf, (void *)paddr, NULL);
 
 	return true;
 }
