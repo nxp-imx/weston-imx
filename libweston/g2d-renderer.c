@@ -39,13 +39,18 @@
 #include <unistd.h>
 #include <HAL/gc_hal.h>
 #include <drm_fourcc.h>
+#include <poll.h>
+#include <errno.h>
 
 #include "compositor.h"
 #include "g2d-renderer.h"
 #include "vertex-clipping.h"
-#include "shared/helpers.h"
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
+#include "linux-explicit-synchronization.h"
+#include "shared/fd-util.h"
+#include "shared/helpers.h"
+#include "shared/platform.h"
 
 #define BUFFER_DAMAGE_COUNT 3
 #define ALIGN_TO_16(a) (((a) + 15) & ~15)
@@ -108,6 +113,7 @@ struct g2d_output_state {
 struct g2d_surface_state {
 	float color[4];
 	struct weston_buffer_reference buffer_ref;
+	struct weston_buffer_release_reference buffer_release_ref;
 	int pitch; /* in pixels */
 	int attached;
 	pixman_region32_t texture_damage;
@@ -864,6 +870,56 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	}
 }
 
+static int sync_wait(int fd, int timeout)
+{
+    struct pollfd fds;
+    int ret;
+
+    if (fd < 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    fds.fd = fd;
+    fds.events = POLLIN;
+
+    do {
+        ret = poll(&fds, 1, timeout);
+        if (ret > 0) {
+            if (fds.revents & (POLLERR | POLLNVAL)) {
+                errno = EINVAL;
+                return -1;
+            }
+            return 0;
+        } else if (ret == 0) {
+            errno = ETIME;
+            return -1;
+        }
+    } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+
+    return ret;
+}
+
+static int
+ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
+			       struct g2d_surface_state *gs)
+{
+	int ret;
+	struct weston_surface *surface = gs->surface;
+	struct weston_buffer *buffer = gs->buffer_ref.buffer;
+
+
+	if (!buffer)
+		return 0;
+
+	if (surface->acquire_fence_fd < 0)
+		return 0;
+
+	ret = sync_wait(surface->acquire_fence_fd, -1);
+
+	return ret;
+}
+
 static void
 draw_view(struct weston_view *ev, struct weston_output *output,
 		 pixman_region32_t *damage) /* in global coordinates */
@@ -885,6 +941,9 @@ draw_view(struct weston_view *ev, struct weston_output *output,
 	pixman_region32_subtract(&repaint, &repaint, &ev->clip);
 
 	if (!pixman_region32_not_empty(&repaint))
+		goto out;
+
+	if (ensure_surface_buffer_is_ready(gr, gs) < 0)
 		goto out;
 
 	/* blended region is whole surface minus opaque region: */
@@ -1133,6 +1192,7 @@ done:
 	pixman_region32_init(&gs->texture_damage);
 
 	weston_buffer_reference(&gs->buffer_ref, NULL);
+	weston_buffer_release_reference(&gs->buffer_release_ref, NULL);
 }
 
 static void
@@ -1447,6 +1507,7 @@ surface_state_destroy(struct g2d_surface_state *gs, struct g2d_renderer *gr)
 	}
 
 	weston_buffer_reference(&gs->buffer_ref, NULL);
+	weston_buffer_release_reference(&gs->buffer_release_ref, NULL);
 	free(gs);
 }
 
@@ -1626,6 +1687,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.import_dmabuf = g2d_renderer_import_dmabuf;
 	gr->base.query_dmabuf_formats = g2d_renderer_query_dmabuf_formats;
 	gr->base.query_dmabuf_modifiers = g2d_renderer_query_dmabuf_modifiers;
+	ec->renderer = &gr->base;
 #ifdef ENABLE_EGL
 	gr->bind_display =
 		(void *) eglGetProcAddress("eglBindWaylandDisplayWL");
@@ -1636,13 +1698,17 @@ g2d_renderer_create(struct weston_compositor *ec)
 		get_platform_display = (void *) eglGetProcAddress(
 				"eglGetPlatformDisplayEXT");
 	}
+
+	ec->capabilities |= WESTON_CAP_EXPLICIT_SYNC;
 #endif
 	if(g2d_open(&gr->handle))
 	{
 		weston_log("g2d_open fail.\n");
 		return -1;
 	}
-	ec->renderer = &gr->base;
+
+	ec->capabilities |= WESTON_CAP_ROTATION_ANY;
+	ec->capabilities |= WESTON_CAP_CAPTURE_YFLIP;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
@@ -1681,8 +1747,9 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 				native_window, NULL);
 	if(gr->bind_display)
 		gr->bind_display(gr->egl_display, gr->wl_display);
-	gr->use_drm = 1;
 #endif
+	gr->use_drm = 1;
+
 	return 0;
 }
 
