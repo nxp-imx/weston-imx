@@ -464,6 +464,13 @@ fbdev_frame_buffer_open(const char *fb_dev,
 		return -1;
 	}
 
+	/* Attempt to wake up the framebuffer device, needed for secondary
+	 * framebuffer devices */
+	if (fbdev_wakeup_screen(fd, screen_info) < 0) {
+		weston_log("Failed to activate framebuffer display. "
+		           "Attempting to open output anyway.\n");
+	}
+
 	return fd;
 }
 
