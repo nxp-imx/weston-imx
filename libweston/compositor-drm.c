@@ -2791,6 +2791,11 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_IN_FENCE_FD,
 					      plane_state->in_fence_fd);
+		} else if (output->base.in_fence_fd >= 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY) {
+			ret |= plane_add_prop(req, plane,
+					      WDRM_PLANE_IN_FENCE_FD,
+					      output->base.in_fence_fd);
+			output->base.in_fence_fd = -1;
 		}
 
 		if (plane_state->fb && plane_state->fb->dtrc_meta != plane->dtrc_meta
@@ -7078,6 +7083,7 @@ drm_output_create(struct weston_compositor *compositor, const char *name)
 	output->base.disable = drm_output_disable;
 	output->base.attach_head = drm_output_attach_head;
 	output->base.detach_head = drm_output_detach_head;
+	output->base.in_fence_fd = -1;
 
 	output->destroy_pending = 0;
 	output->disable_pending = 0;
