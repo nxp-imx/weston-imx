@@ -2361,6 +2361,7 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 				if (scanout_state->src_h > (height << 16))
 					scanout_state->src_h = height << 16;
 			}
+			free(size);
 		}
 	}
 
