@@ -3039,7 +3039,7 @@ desktop_shell_set_background(struct wl_client *client,
 	weston_surface_set_label_func(surface, background_get_label);
 	surface->output = weston_head_from_resource(output_resource)->output;
 	weston_view_set_output(view, surface->output);
-	
+
 	section = weston_config_get_section(wet_get_config(shell->compositor),
 					    "shell", NULL, NULL);
 	if (section) {
@@ -3057,6 +3057,7 @@ desktop_shell_set_background(struct wl_client *client,
 				if (surface->output->height > height)
 					surface->output->height = height;
 			}
+			free(size);
 		}
 	}
 
@@ -3175,6 +3176,7 @@ desktop_shell_set_panel(struct wl_client *client,
 				if (surface->output->height > height)
 					surface->output->height = height;
 			}
+			free(size);
 		}
 	}
 
