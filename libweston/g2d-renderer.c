@@ -54,6 +54,7 @@
 
 #define BUFFER_DAMAGE_COUNT 3
 #define ALIGN_TO_16(a) (((a) + 15) & ~15)
+#define ALIGN_TO_64(a) (((a) + 63) & ~63)
 
 static PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
 
@@ -444,13 +445,11 @@ g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_
 	g2d_SetSurfaceRect(dstG2dSurface, dstRect);
 	srcG2dSurface->base.blendfunc = G2D_ONE;
 	dstG2dSurface->base.blendfunc = G2D_ONE_MINUS_SRC_ALPHA;
-	if(!(_hasAlpha(srcG2dSurface->base.format)))
-	{
+	if(!(_hasAlpha(srcG2dSurface->base.format))){
 		g2d_disable(handle, G2D_BLEND);
 	}
 
-	if(g2d_blitEx(handle, srcG2dSurface, dstG2dSurface))
-	{
+	if(g2d_blitEx(handle, srcG2dSurface, dstG2dSurface)){
 		printG2dSurfaceInfo(srcG2dSurface, "SRC:");
 		printG2dSurfaceInfo(dstG2dSurface, "DST:");
 		return -1;
@@ -904,10 +903,9 @@ static int
 ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
 			       struct g2d_surface_state *gs)
 {
-	int ret;
+	int ret = 0;
 	struct weston_surface *surface = gs->surface;
 	struct weston_buffer *buffer = gs->buffer_ref.buffer;
-
 
 	if (!buffer)
 		return 0;
@@ -915,7 +913,15 @@ ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
 	if (surface->acquire_fence_fd < 0)
 		return 0;
 
-	ret = sync_wait(surface->acquire_fence_fd, -1);
+	ret = sync_wait(surface->acquire_fence_fd, 2000);
+
+	if (ret < 0 && errno == ETIME){
+		/* Print a warning. */
+		weston_log("%s: Warning: wait for fence fd=%d", __func__, surface->acquire_fence_fd);
+
+		/* Wait for ever. */
+		ret = sync_wait(surface->acquire_fence_fd, -1);
+	}
 
 	return ret;
 }
@@ -1325,9 +1331,13 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gctUINT32 paddr = 0;
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
-	alignedWidth = ALIGN_TO_16(buffer->width);
-	alignedHeight = ALIGN_TO_16(buffer->height);
-
+	if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED) {
+		alignedWidth  = ALIGN_TO_64(buffer->width);
+		alignedHeight = ALIGN_TO_64(buffer->height);
+	} else {
+		alignedWidth  = ALIGN_TO_16(buffer->width);
+		alignedHeight = ALIGN_TO_16(buffer->height);
+	}
 	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
 
 	if (g2dFormat < 0)
@@ -1380,6 +1390,9 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
 		gs->g2d_surface.base.stride = dmabuf->attributes.stride[0];
 		gs->g2d_surface.tiling = G2D_AMPHION_TILED;
+	} else if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED){
+		gs->g2d_surface.base.stride = alignedWidth;
+		gs->g2d_surface.tiling = G2D_SUPERTILED;
 	} else {
 		gs->g2d_surface.base.stride = alignedWidth;
 		gs->g2d_surface.tiling = G2D_LINEAR;
