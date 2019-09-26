@@ -11,11 +11,19 @@ srcs_fbdev = [
 
 deps_fbdev = [
 	dep_libweston_private,
+	dep_libdrm_headers,
 	dep_session_helper,
 	dep_libinput_backend,
 	dependency('libudev', version: '>= 136'),
 ]
 
+if get_option('egl')
+	d = dependency('egl', required: false)
+	if not d.found()
+		error('fb-backend + gl-renderer requires egl which was not found.')
+	endif
+	deps_fbdev += d
+endif
 plugin_fbdev = shared_library(
 	'fbdev-backend',
 	srcs_fbdev,
