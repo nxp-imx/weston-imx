@@ -68,6 +68,11 @@ foreach a : global_args_maybe
 		global_args += a
 	endif
 endforeach
+
+if get_option('enable-egl')
+	global_args += '-DENABLE_EGL'
+endif
+
 add_global_arguments(global_args, language: 'c')
 
 if cc.has_header_symbol('sys/sysmacros.h', 'major')
@@ -141,6 +146,7 @@ dep_libdl = cc.find_library('dl')
 dep_libdrm = dependency('libdrm', version: '>= 2.4.68')
 dep_libdrm_headers = dep_libdrm.partial_dependency(compile_args: true)
 dep_threads = dependency('threads')
+dep_g2d = cc.find_library('g2d')
 
 subdir('include')
 subdir('protocol')

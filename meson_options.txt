@@ -66,6 +66,20 @@ option(
 )
 
 option(
+	'renderer-g2d',
+	type: 'boolean',
+	value: true,
+	description: 'Weston renderer: EGL / OpenGL ES 2.x'
+)
+
+option(
+	'enable-egl',
+	type: 'boolean',
+	value: true,
+	description: 'Weston enable EGL'
+)
+
+option(
 	'weston-launch',
 	type: 'boolean',
 	value: true,
