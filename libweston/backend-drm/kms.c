@@ -1352,6 +1352,7 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	uint32_t flags, tear_flag = 0;
 	bool may_tear = true;
 	int ret = 0;
+	drm_magic_t magic;
 
 	if (!req)
 		return -1;
@@ -1471,6 +1472,11 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	if (may_tear)
 		tear_flag = DRM_MODE_PAGE_FLIP_ASYNC;
 
+	/*drm master was set by systemd in PM test, try to set the master back.*/
+	if (!(drmGetMagic(device->drm.fd, &magic) == 0 &&
+			drmAuthMagic(device->drm.fd, magic) == 0)) {
+		drmSetMaster(device->drm.fd);
+	}
 	ret = drmModeAtomicCommit(device->drm.fd, req, flags | tear_flag,
 				  device);
 	drm_debug(b, "[atomic] drmModeAtomicCommit\n");
