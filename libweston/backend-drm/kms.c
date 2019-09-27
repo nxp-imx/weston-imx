@@ -1083,6 +1083,7 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	uint32_t flags;
 	int ret = 0;
+	drm_magic_t magic;
 
 	if (!req)
 		return -1;
@@ -1199,6 +1200,11 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		goto out;
 	}
 
+	/*drm master was set by systemd in PM test, try to set the master back.*/
+	if (!(drmGetMagic(device->drm.fd, &magic) == 0 &&
+			drmAuthMagic(device->drm.fd, magic) == 0)) {
+		drmSetMaster(device->drm.fd);
+	}
 	ret = drmModeAtomicCommit(device->drm.fd, req, flags, device);
 	drm_debug(b, "[atomic] drmModeAtomicCommit\n");
 
