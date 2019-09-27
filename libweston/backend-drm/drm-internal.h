@@ -41,6 +41,9 @@
 #include <assert.h>
 #include <sys/mman.h>
 #include <time.h>
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+#include <g2dExt.h>
+#endif
 
 
 #include <xf86drm.h>
@@ -249,6 +252,9 @@ struct drm_backend {
 	bool atomic_modeset;
 
 	bool use_pixman;
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+    bool use_g2d;
+#endif
 	bool use_pixman_shadow;
 
 	struct udev_input input;
@@ -468,6 +474,9 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	pixman_image_t *image[2];
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
 	pixman_region32_t previous_damage;
 
