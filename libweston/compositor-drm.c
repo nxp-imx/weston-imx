@@ -361,6 +361,7 @@ struct drm_backend {
 	bool use_g2d;
 #endif
 	bool use_pixman_shadow;
+	bool enable_overlay_view;
 
 	struct udev_input input;
 
@@ -1732,10 +1733,13 @@ drm_fb_get_from_view(struct drm_output_state *state, struct weston_view *ev)
 		if (!fb)
 			return NULL;
 	} else {
-		struct gbm_bo *bo;
+		struct gbm_bo *bo = NULL;
 
-		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
-				   buffer->resource, GBM_BO_USE_SCANOUT);
+		if(b->enable_overlay_view)
+		{
+			bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
+					   buffer->resource, GBM_BO_USE_SCANOUT);
+		}
 		if (!bo)
 			return NULL;
 
@@ -8059,6 +8063,7 @@ drm_backend_create(struct weston_compositor *compositor,
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	b->use_g2d = config->use_g2d;
 #endif
+	b->enable_overlay_view = config->enable_overlay_view;
 	b->pageflip_timeout = config->pageflip_timeout;
 	b->use_pixman_shadow = config->use_pixman_shadow;
 
@@ -8264,6 +8269,7 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 #else
 	config->use_pixman = 0;
 	config->use_pixman_shadow = false;
+	config->enable_overlay_view = 0;
 #endif
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 #if !defined(ENABLE_OPENGL)

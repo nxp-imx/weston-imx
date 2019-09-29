@@ -1603,6 +1603,34 @@ g2d_renderer_surface_set_color(struct weston_surface *surface,
 	gs->color[3] = alpha;
 }
 
+ static int
+ g2d_enable_overlay_view(void)
+ {
+	char *path = "/etc/xdg/weston/weston.ini";
+	char source[128];
+	int ret;
+
+	FILE *fp = fopen(path, "rb");
+
+	ret = fread(source, 1, sizeof(source), fp);
+	if(!ret)
+	{
+		gcmPRINT("Fail to open weston.ini");
+		fclose(fp);
+		return 0;
+	}
+
+	if(strstr( source, "#enable-overlay-view=1"))
+	{
+		fclose(fp);
+		return 0;
+	}
+	else
+	{
+		fclose(fp);
+		return 1;
+	}
+ }
 
 static void
 g2d_renderer_output_destroy(struct weston_output *output)
@@ -1679,6 +1707,18 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	strcat(path, "/use-g2d-renderer");
 	remove(path);
 	free(path);
+
+	if(g2d_enable_overlay_view())
+	{
+		/* remove enable-overlay-view */
+		char *dir, *path;
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		remove(path);
+		free(path);
+	}
 }
 
 static int
@@ -1747,6 +1787,8 @@ static int
 g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 {
 	struct g2d_renderer *gr;
+	char *dir, *path;
+	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 	if(g2d_renderer_create(ec) < 0)
 	{
 		weston_log("g2d_renderer_create faile.\n");
@@ -1762,6 +1804,18 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		gr->bind_display(gr->egl_display, gr->wl_display);
 #endif
 	gr->use_drm = 1;
+
+	if(g2d_enable_overlay_view())
+	{
+		/* create enable-overlay-view*/
+
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		close(open(path, O_CREAT | O_RDWR, mode));
+		free(path);
+	}
 
 	return 0;
 }
