@@ -4681,7 +4681,7 @@ static int
 drm_backend_create_g2d_renderer(struct drm_backend *b)
 {
 	if (g2d_renderer->drm_display_create(b->compositor,
-					(void *)b->gbm) < 0) {
+					(void *)b->gbm, b->enable_overlay_view) < 0) {
 		return -1;
 	}
 

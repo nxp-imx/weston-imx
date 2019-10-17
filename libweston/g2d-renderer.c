@@ -141,6 +141,7 @@ struct g2d_renderer {
 #endif
 	void *handle;
 	int use_drm;
+	int enable_overlay_view;
 };
 
 static int
@@ -1603,35 +1604,6 @@ g2d_renderer_surface_set_color(struct weston_surface *surface,
 	gs->color[3] = alpha;
 }
 
- static int
- g2d_enable_overlay_view(void)
- {
-	char *path = "/etc/xdg/weston/weston.ini";
-	char source[128];
-	int ret;
-
-	FILE *fp = fopen(path, "rb");
-
-	ret = fread(source, 1, sizeof(source), fp);
-	if(!ret)
-	{
-		gcmPRINT("Fail to open weston.ini");
-		fclose(fp);
-		return 0;
-	}
-
-	if(strstr( source, "#enable-overlay-view=1"))
-	{
-		fclose(fp);
-		return 0;
-	}
-	else
-	{
-		fclose(fp);
-		return 1;
-	}
- }
-
 static void
 g2d_renderer_output_destroy(struct weston_output *output)
 {
@@ -1708,7 +1680,7 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	remove(path);
 	free(path);
 
-	if(g2d_enable_overlay_view())
+	if(gr->enable_overlay_view)
 	{
 		/* remove enable-overlay-view */
 		char *dir, *path;
@@ -1784,7 +1756,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 }
 
 static int
-g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
+g2d_drm_display_create(struct weston_compositor *ec, void *native_window, bool enable_overlay_view)
 {
 	struct g2d_renderer *gr;
 	char *dir, *path;
@@ -1804,8 +1776,9 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		gr->bind_display(gr->egl_display, gr->wl_display);
 #endif
 	gr->use_drm = 1;
+	gr->enable_overlay_view = enable_overlay_view;
 
-	if(g2d_enable_overlay_view())
+	if(gr->enable_overlay_view)
 	{
 		/* create enable-overlay-view*/
 

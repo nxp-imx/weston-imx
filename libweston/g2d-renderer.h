@@ -50,7 +50,7 @@
 struct g2d_renderer_interface {
 	int (*create)(struct weston_compositor *ec);
 
-	int (*drm_display_create)(struct weston_compositor *ec, void *native_window);
+	int (*drm_display_create)(struct weston_compositor *ec, void *native_window, bool enable_overlay_view);
 
 	int (*drm_output_create)(struct weston_output *output);
 
