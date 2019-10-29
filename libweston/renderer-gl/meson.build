@@ -3,8 +3,6 @@ if not get_option('renderer-gl')
 endif
 
 config_h.set('ENABLE_EGL', '1')
-config_h.set('ENABLE_IMXGPU', '1')
-config_h.set('ENABLE_OPENGL', '1')
 
 srcs_renderer_gl = [
 	'egl-glue.c',
