@@ -3,7 +3,6 @@ if not get_option('renderer-g2d')
 endif
 
 config_h.set('ENABLE_EGL', '1')
-config_h.set('ENABLE_IMXGPU', '1')
 config_h.set('ENABLE_IMXG2D', '1')
 
 srcs_renderer_g2d = [
@@ -11,6 +10,8 @@ srcs_renderer_g2d = [
 	linux_dmabuf_unstable_v1_protocol_c,
 	linux_dmabuf_unstable_v1_server_protocol_h,
 ]
+
+dep_g2d = cc.find_library('g2d')
 
 deps_renderer_g2d = [
 	dep_pixman,
@@ -20,12 +21,12 @@ deps_renderer_g2d = [
 	dep_g2d,
 ]
 
-foreach name : [ 'egl', 'glesv2' ]
+foreach name : [ 'egl' ]
 	d = dependency(name, required: false)
 	if not d.found()
 		error('g2d-renderer requires @0@ which was not found. Or, you can use \'-Drenderer-g2d=false\'.'.format(name))
 	endif
-	deps_renderer_gl += d
+	deps_renderer_g2d += d
 endforeach
 
 plugin_g2d = shared_library(

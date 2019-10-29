@@ -69,8 +69,16 @@ foreach a : global_args_maybe
 	endif
 endforeach
 
-if get_option('enable-egl')
+if get_option('egl')
 	global_args += '-DENABLE_EGL'
+endif
+
+if get_option('opengl')
+    config_h.set('ENABLE_OPENGL', '1')
+endif
+
+if get_option('imxgpu')
+    config_h.set('ENABLE_IMXGPU', '1')
 endif
 
 add_global_arguments(global_args, language: 'c')
@@ -146,7 +154,6 @@ dep_libdl = cc.find_library('dl')
 dep_libdrm = dependency('libdrm', version: '>= 2.4.68')
 dep_libdrm_headers = dep_libdrm.partial_dependency(compile_args: true)
 dep_threads = dependency('threads')
-dep_g2d = cc.find_library('g2d')
 
 subdir('include')
 subdir('protocol')
