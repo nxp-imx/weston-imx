@@ -190,6 +190,7 @@ enum wdrm_connector_property {
 	WDRM_CONNECTOR_CONTENT_PROTECTION,
 	WDRM_CONNECTOR_HDCP_CONTENT_TYPE,
 	WDRM_CONNECTOR_PANEL_ORIENTATION,
+	WDRM_CONNECTOR_HDR10_METADATA,
 	WDRM_CONNECTOR__COUNT
 };
 
@@ -272,6 +273,10 @@ struct drm_backend {
 	struct gbm_device *gbm;
 	struct wl_listener session_listener;
 	uint32_t gbm_format;
+
+	/* hdr10 metadata blob id */
+	unsigned int hdr_blob_id;
+	bool clean_hdr_blob;
 
 	/* we need these parameters in order to not fail drmModeAddFB2()
 	 * due to out of bounds dimensions, and then mistakenly set
