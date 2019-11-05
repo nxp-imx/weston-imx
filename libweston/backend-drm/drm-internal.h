@@ -78,6 +78,8 @@
 #define DRM_PLANE_ZPOS_INVALID_PLANE	0xffffffffffffffffULL
 #endif
 
+#define ALIGNTO(a, b) ((a + (b-1)) & (~(b-1)))
+
 /**
  * A small wrapper to print information into the 'drm-backend' debug scope.
  *
