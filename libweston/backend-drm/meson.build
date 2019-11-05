@@ -44,6 +44,8 @@ srcs_drm = [
 	linux_dmabuf_unstable_v1_protocol_c,
 	linux_dmabuf_unstable_v1_server_protocol_h,
 	presentation_time_server_protocol_h,
+	hdr10_metadata_unstable_v1_protocol_c,
+	hdr10_metadata_unstable_v1_server_protocol_h,
 ]
 
 deps_drm = [
