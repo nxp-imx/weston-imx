@@ -1011,6 +1011,17 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 						  WDRM_CONNECTOR_CRTC_ID,
 						  crtc->crtc_id);
 		}
+
+		if (device->hdr_blob_id > 0) {
+			wl_list_for_each(head, &output->base.head_list, base.output_link) {
+				/* checking if the output driver this head */
+				if (head->base.output == &output->base) {
+					connector_add_prop(req, &head->connector, WDRM_CONNECTOR_HDR_OUTPUT_METADATA,
+							device->hdr_blob_id);
+					*flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
+				}
+			}
+		}
 	} else {
 		ret |= crtc_add_prop(req, crtc, WDRM_CRTC_MODE_ID, 0);
 		ret |= crtc_add_prop(req, crtc, WDRM_CRTC_ACTIVE, 0);
@@ -1034,10 +1045,11 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 		}
 
 		if (drm_connector_has_prop(&head->connector,
-					   WDRM_CONNECTOR_HDR_OUTPUT_METADATA)) {
+					   WDRM_CONNECTOR_HDR_OUTPUT_METADATA) && device->clean_hdr_blob) {
 			ret |= connector_add_prop(req, &head->connector,
 						  WDRM_CONNECTOR_HDR_OUTPUT_METADATA,
 						  output->hdr_output_metadata_blob_id);
+			*flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
 		}
 
 		ret |= drm_connector_set_max_bpc(&head->connector, output, req);
@@ -1274,10 +1286,15 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		drm_output_assign_state(output_state, mode);
 
 	device->state_invalid = false;
+	device->clean_hdr_blob = false;
 
 	assert(wl_list_empty(&pending_state->output_list));
 
 out:
+	if (device->hdr_blob_id > 0) {
+		drmModeDestroyPropertyBlob (device->drm.fd, device->hdr_blob_id);
+		device->hdr_blob_id = 0;
+	}
 	drmModeAtomicFree(req);
 	drm_pending_state_free(pending_state);
 	return ret;
