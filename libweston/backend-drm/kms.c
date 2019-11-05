@@ -103,6 +103,7 @@ const struct drm_property_info connector_props[] = {
 	},
 	[WDRM_CONNECTOR_CRTC_ID] = { .name = "CRTC_ID", },
 	[WDRM_CONNECTOR_NON_DESKTOP] = { .name = "non-desktop", },
+	[WDRM_CONNECTOR_HDR10_METADATA] = { .name = "HDR_SOURCE_METADATA", },
 };
 
 const struct drm_property_info crtc_props[] = {
@@ -823,6 +824,15 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= connector_add_prop(req, head, WDRM_CONNECTOR_CRTC_ID,
 						  output->crtc_id);
 		}
+
+		if (b->hdr_blob_id > 0) {
+			wl_list_for_each(head, &output->base.head_list, base.output_link) {
+				/* checking if the output driver this head */
+				if (head->base.output == &output->base)
+					connector_add_prop(req, head, WDRM_CONNECTOR_HDR10_METADATA,
+							b->hdr_blob_id);
+			}
+		}
 	} else {
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_MODE_ID, 0);
 		ret |= crtc_add_prop(req, output, WDRM_CRTC_ACTIVE, 0);
@@ -1062,6 +1072,10 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	assert(wl_list_empty(&pending_state->output_list));
 
 out:
+	if (b->hdr_blob_id > 0) {
+		drmModeDestroyPropertyBlob (b->drm.fd, b->hdr_blob_id);
+		b->hdr_blob_id = 0;
+	}
 	drmModeAtomicFree(req);
 	drm_pending_state_free(pending_state);
 	return ret;
