@@ -67,6 +67,7 @@
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 #include "linux-explicit-synchronization.h"
+#include "hdr10-metadata-unstable-v1-server-protocol.h"
 
 static const char default_seat[] = "seat0";
 
@@ -3128,6 +3129,102 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 	return false;
 }
 
+static void
+hdr10_metadata_destroy(struct wl_client *client,
+			  struct wl_resource *resource)
+{
+	wl_resource_destroy(resource);
+}
+
+static void
+hdr10_metadata_set_metadata(struct wl_client *client,
+			     struct wl_resource *resource,
+			     uint32_t eotf,
+				 uint32_t type,
+			     uint32_t display_primaries_red,
+			     uint32_t display_primaries_green,
+			     uint32_t display_primaries_blue,
+			     uint32_t white_point,
+			     uint32_t mastering_display_luminance,
+			     uint32_t max_cll,
+				 uint32_t max_fall)
+{
+	struct weston_compositor *compositor = wl_resource_get_user_data(resource);
+	struct drm_backend *b = to_drm_backend(compositor);
+	struct hdr_output_metadata hdr_metadata;
+
+	if (eotf == 0) {
+		b->clean_hdr_blob = true;
+		return;
+	}
+
+	hdr_metadata.metadata_type = 0;
+	hdr_metadata.hdmi_metadata_type1.eotf = eotf & 0xff;
+	hdr_metadata.hdmi_metadata_type1.metadata_type = type & 0xff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[0].x = (display_primaries_red >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[0].y = display_primaries_red & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[1].x = (display_primaries_green >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[1].y = display_primaries_green & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[2].x = (display_primaries_blue >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[2].y = display_primaries_blue & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.white_point.x = (white_point >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.white_point.y = white_point & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance =
+				(mastering_display_luminance >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance =
+				mastering_display_luminance & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_cll = max_cll & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_fall = max_fall & 0xffff;
+
+	drmModeCreatePropertyBlob(b->drm.fd, &hdr_metadata, sizeof(hdr_metadata), &b->hdr_blob_id);
+}
+
+static const struct zwp_hdr10_metadata_v1_interface hdr10_metadata_interface = {
+	hdr10_metadata_destroy,
+	hdr10_metadata_set_metadata,
+};
+
+static void
+bind_hdr10_metadata(struct wl_client *client,
+		       void *data, uint32_t version, uint32_t id)
+{
+	struct wl_resource *resource;
+	struct weston_compositor *compositor = data;
+
+	resource = wl_resource_create(client, &zwp_hdr10_metadata_v1_interface,
+				      version, id);
+	if (resource == NULL) {
+		wl_client_post_no_memory(client);
+		return;
+	}
+
+	wl_resource_set_implementation(resource, &hdr10_metadata_interface,
+				       compositor, NULL);
+}
+
+static bool
+drm_backend_is_hdr_supported(struct weston_compositor *compositor)
+{
+	struct drm_output *output;
+	struct drm_head *head;
+
+	wl_list_for_each(output, &compositor->output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->connector.props[WDRM_CONNECTOR_HDR10_METADATA].prop_id > 0)
+				return true;
+		}
+	}
+
+	wl_list_for_each(output, &compositor->pending_output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->connector.props[WDRM_CONNECTOR_HDR10_METADATA].prop_id > 0)
+				return true;
+		}
+	}
+
+	return true;
+}
+
 static struct drm_backend *
 drm_backend_create(struct weston_compositor *compositor,
 		   struct weston_drm_backend_config *config)
@@ -3157,6 +3254,7 @@ drm_backend_create(struct weston_compositor *compositor,
 		return NULL;
 
 	b->state_invalid = true;
+	b->clean_hdr_blob = false;
 	b->drm.fd = -1;
 
 	b->compositor = compositor;
@@ -3361,6 +3459,15 @@ drm_backend_create(struct weston_compositor *compositor,
 		if (weston_compositor_enable_content_protection(compositor) < 0)
 			weston_log("Error: initializing content-protection "
 				   "support failed.\n");
+
+	if (drm_backend_is_hdr_supported(compositor)) {
+		if (!wl_global_create(compositor->wl_display, &zwp_hdr10_metadata_v1_interface, 1,
+				      compositor, bind_hdr10_metadata)) {
+			weston_log("Error: initializing hdr10 support failed\n");
+		}
+	} else {
+		weston_log("info: HDR is not support\n");
+	}
 
 	ret = weston_plugin_api_register(compositor, WESTON_DRM_OUTPUT_API_NAME,
 					 &api, sizeof(api));
