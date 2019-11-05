@@ -199,6 +199,30 @@ drm_plane_state_put_back(struct drm_plane_state *state)
 	(void) drm_plane_state_alloc(state_output, plane);
 }
 
+static void
+drm_clip_overlay_coordinate(struct drm_output * output,
+				struct drm_plane_state * state)
+{
+	uint32_t src_w = state->src_w >> 16;
+	uint32_t src_h = state->src_h >> 16;
+	/* handle out of screen case */
+	if (state->dest_x + state->dest_w > (uint32_t)output->base.current_mode->width){
+		int32_t crop_width = output->base.current_mode->width - state->dest_x;
+		if(crop_width > 0) {
+			state->src_w = ALIGNTO((crop_width * src_w / state->dest_w), 2) << 16;
+			state->dest_w = crop_width;
+		}
+	}
+
+	if (state->dest_y + state->dest_h > (uint32_t)output->base.current_mode->height){
+		int32_t crop_height = output->base.current_mode->height - state->dest_y;
+		if(crop_height > 0) {
+			state->src_h = ALIGNTO((crop_height * src_h / state->dest_h), 2) << 16;
+			state->dest_h = crop_height;
+		}
+	}
+}
+
 /**
  * Given a weston_view, fill the drm_plane_state's co-ordinates to display on
  * a given plane.
@@ -208,13 +232,20 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 				struct weston_view *ev, uint64_t zpos)
 {
 	struct drm_output *output = state->output;
-	struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
-	pixman_region32_t dest_rect, src_rect;
+	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
+	pixman_region32_t dest_rect;
 	pixman_box32_t *box, tbox;
-	float sxf1, syf1, sxf2, syf2;
+	int32_t scale;
+	int src_x, src_y, src_width, src_height;
 
 	if (!drm_view_transform_supported(ev, &output->base))
 		return false;
+
+	if (viewport->buffer.scale != output->base.current_scale){
+		scale = MAX(viewport->buffer.scale, output->base.current_scale);
+	} else {
+		scale = output->base.current_scale;
+	}
 
 	/* Update the base weston_plane co-ordinates. */
 	box = pixman_region32_extents(&ev->transform.boundingbox);
@@ -232,7 +263,7 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 	tbox = weston_transformed_rect(output->base.width,
 				       output->base.height,
 				       output->base.transform,
-				       output->base.current_scale,
+				       scale,
 				       *box);
 	state->dest_x = tbox.x1;
 	state->dest_y = tbox.y1;
@@ -240,50 +271,29 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 	state->dest_h = tbox.y2 - tbox.y1;
 	pixman_region32_fini(&dest_rect);
 
-	/* Now calculate the source rectangle, by finding the extents of the
-	 * view, and working backwards to source co-ordinates. */
-	pixman_region32_init(&src_rect);
-	pixman_region32_intersect(&src_rect, &ev->transform.boundingbox,
-				  &output->base.region);
-	box = pixman_region32_extents(&src_rect);
-	weston_view_from_global_float(ev, box->x1, box->y1, &sxf1, &syf1);
-	weston_surface_to_buffer_float(ev->surface, sxf1, syf1, &sxf1, &syf1);
-	weston_view_from_global_float(ev, box->x2, box->y2, &sxf2, &syf2);
-	weston_surface_to_buffer_float(ev->surface, sxf2, syf2, &sxf2, &syf2);
-	pixman_region32_fini(&src_rect);
+	src_x = wl_fixed_to_int (viewport->buffer.src_x);
+	src_y = wl_fixed_to_int (viewport->buffer.src_y);
+	src_width = wl_fixed_to_int (viewport->buffer.src_width);
+	src_height = wl_fixed_to_int (viewport->buffer.src_height);
 
-	/* Buffer transforms may mean that x2 is to the left of x1, and/or that
-	 * y2 is above y1. */
-	if (sxf2 < sxf1) {
-		double tmp = sxf1;
-		sxf1 = sxf2;
-		sxf2 = tmp;
+	if(src_width != -1 && src_width > 0 && src_x >=0 && src_y >= 0
+		&& src_x * scale < state->fb->width
+		&& src_y * scale < state->fb->height)
+	{
+		state->src_x = (src_x * scale) << 16;
+		state->src_y = (src_y * scale) << 16;
+		state->src_w = MIN(state->fb->width - src_x * scale, src_width * scale) << 16;
+		state->src_h = MIN(state->fb->height - src_y * scale, src_height * scale) << 16;
 	}
-	if (syf2 < syf1) {
-		double tmp = syf1;
-		syf1 = syf2;
-		syf2 = tmp;
-	}
-
-	/* Shift from S23.8 wl_fixed to U16.16 KMS fixed-point encoding. */
-	state->src_x = wl_fixed_from_double(sxf1) << 8;
-	state->src_y = wl_fixed_from_double(syf1) << 8;
-	state->src_w = wl_fixed_from_double(sxf2 - sxf1) << 8;
-	state->src_h = wl_fixed_from_double(syf2 - syf1) << 8;
-
-	/* Clamp our source co-ordinates to surface bounds; it's possible
-	 * for intermediate translations to give us slightly incorrect
-	 * co-ordinates if we have, for example, multiple zooming
-	 * transformations. View bounding boxes are also explicitly rounded
-	 * greedily. */
-	if (state->src_x < 0)
+	else
+	{
 		state->src_x = 0;
-	if (state->src_y < 0)
 		state->src_y = 0;
-	if (state->src_w > (uint32_t) ((buffer->width << 16) - state->src_x))
-		state->src_w = (buffer->width << 16) - state->src_x;
-	if (state->src_h > (uint32_t) ((buffer->height << 16) - state->src_y))
-		state->src_h = (buffer->height << 16) - state->src_y;
+		state->src_w = state->fb->width << 16;
+		state->src_h = state->fb->height << 16;
+	}
+
+	drm_clip_overlay_coordinate(output, state);
 
 	/* apply zpos if available */
 	state->zpos = zpos;

@@ -101,6 +101,11 @@ drm_output_try_view_on_plane(struct drm_plane *plane,
 	assert(!state->fb);
 	state->output = output;
 
+	/* We hold one reference for the lifetime of this function; from
+	 * calling drm_fb_get_from_view() in drm_output_prepare_plane_view(),
+	 * so, we take another reference here to live within the state. */
+	state->fb = drm_fb_ref(fb);
+
 	if (!drm_plane_state_coords_for_view(state, ev, zpos)) {
 		drm_debug(b, "\t\t\t\t[view] not placing view %p on plane: "
 			     "unsuitable transform\n", ev);
@@ -114,11 +119,7 @@ drm_output_try_view_on_plane(struct drm_plane *plane,
 		       state->dest_h == (unsigned) output->base.current_mode->height);
 	}
 
-	/* We hold one reference for the lifetime of this function; from
-	 * calling drm_fb_get_from_view() in drm_output_prepare_plane_view(),
-	 * so, we take another reference here to live within the state. */
 	state->ev = ev;
-	state->fb = drm_fb_ref(fb);
 	state->in_fence_fd = ev->surface->acquire_fence_fd;
 
 	/* In planes-only mode, we don't have an incremental state to
