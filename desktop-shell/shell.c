@@ -3057,6 +3057,7 @@ desktop_shell_set_background(struct wl_client *client,
 				if (surface->output->height > height)
 					surface->output->height = height;
 			}
+			free(size);
 		}
 	}
 
@@ -3175,6 +3176,7 @@ desktop_shell_set_panel(struct wl_client *client,
 				if (surface->output->height > height)
 					surface->output->height = height;
 			}
+			free(size);
 		}
 	}
 
