@@ -2496,6 +2496,7 @@ load_drm_backend(struct weston_compositor *c,
 	int use_pixman_config_ = 0;
 	int drm_use_current_mode = 0;
 	int32_t use_pixman_ = 0;
+	uint32_t enable_overlay_view;
 
 	wet->drm_use_current_mode = false;
 
@@ -2517,6 +2518,7 @@ load_drm_backend(struct weston_compositor *c,
 		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
 #endif
 #endif
+		{ WESTON_OPTION_INTEGER, "enable-overlay-view", 0, &config.enable_overlay_view },
 	};
 
 	parse_options(options, ARRAY_LENGTH(options), argc, argv);
@@ -2538,6 +2540,10 @@ load_drm_backend(struct weston_compositor *c,
 	weston_config_section_get_uint(section, "use-g2d", &use_g2d, 0);
 	config.use_g2d = config.use_g2d || use_g2d;
 #endif
+
+	weston_config_section_get_uint(section, "enable-overlay-view", &enable_overlay_view, 0);
+	config.enable_overlay_view = enable_overlay_view;
+
 	config.use_pixman_shadow = use_shadow;
 
 	config.base.struct_version = WESTON_DRM_BACKEND_CONFIG_VERSION;

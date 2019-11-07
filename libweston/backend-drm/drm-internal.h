@@ -263,6 +263,7 @@ struct drm_backend {
     bool use_g2d;
 #endif
 	bool use_pixman_shadow;
+	bool enable_overlay_view;
 
 	struct udev_input input;
 

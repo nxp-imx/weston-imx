@@ -2752,6 +2752,16 @@ drm_destroy(struct weston_compositor *ec)
 	weston_launcher_destroy(ec->launcher);
 
 	wl_array_release(&b->unused_crtcs);
+	if(b->enable_overlay_view){
+		/* remove enable-overlay-view */
+		char *dir, *path;
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		remove(path);
+		free(path);
+	}
 
 	close(b->drm.fd);
 	free(b->drm.filename);
@@ -3694,6 +3704,8 @@ drm_backend_create(struct weston_compositor *compositor,
 	const char *seat_id = default_seat;
 	const char *session_seat;
 	int ret;
+	char *dir, *path;
+	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
 	session_seat = getenv("XDG_SEAT");
 	if (session_seat)
@@ -3717,6 +3729,7 @@ drm_backend_create(struct weston_compositor *compositor,
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	b->use_g2d = config->use_g2d;
 #endif
+	b->enable_overlay_view = config->enable_overlay_view;
 	b->pageflip_timeout = config->pageflip_timeout;
 	b->use_pixman_shadow = config->use_pixman_shadow;
 
@@ -3891,6 +3904,17 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_udev_monitor;
 	}
 
+	if(b->enable_overlay_view){
+		/* create enable-overlay-view*/
+
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		close(open(path, O_CREAT | O_RDWR, mode));
+		free(path);
+	}
+
 	return b;
 
 err_udev_monitor:
@@ -3924,6 +3948,7 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 #else
 	config->use_pixman = 0;
 	config->use_pixman_shadow = false;
+	config->enable_overlay_view = 0;
 #endif
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 #if !defined(ENABLE_OPENGL)

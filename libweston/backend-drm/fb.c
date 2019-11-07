@@ -101,6 +101,9 @@ drm_fb_addfb(struct drm_backend *b, struct drm_fb *fb)
 		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
 			width = ALIGNTO (fb->width, 8);
 			height = ALIGNTO (fb->height, 256);
+		}else if(fb->modifier ==DRM_FORMAT_MOD_VIVANTE_SUPER_TILED){
+			width = ALIGNTO (fb->width, 64);
+			height = ALIGNTO (fb->height, 64);
 		} else {
 			width = fb->width;
 			height = fb->height;
@@ -558,10 +561,13 @@ drm_fb_get_from_view(struct drm_output_state *state, struct weston_view *ev)
 		if (!fb)
 			return NULL;
 	} else {
-		struct gbm_bo *bo;
+		struct gbm_bo *bo = NULL;
 
-		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
-				   buffer->resource, GBM_BO_USE_SCANOUT);
+		if(b->enable_overlay_view)
+		{
+			bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
+					   buffer->resource, GBM_BO_USE_SCANOUT);
+		}
 		if (!bo)
 			return NULL;
 
