@@ -1151,6 +1151,12 @@ fbdev_backend_create(struct weston_compositor *compositor,
 				   "support failed.\n");
 	}
 
+	if (compositor->capabilities & WESTON_CAP_EXPLICIT_SYNC) {
+		if (linux_explicit_synchronization_setup(compositor) < 0)
+			weston_log("Error: initializing explicit "
+				   " synchronization support failed.\n");
+	}
+
 	free(param->device);
 
 	udev_input_init(&backend->input, compositor, backend->udev,
