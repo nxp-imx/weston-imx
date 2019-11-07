@@ -51,6 +51,7 @@
 #include "pixman-renderer.h"
 #include "libinput-seat.h"
 #include "presentation-time-server-protocol.h"
+#include "linux-explicit-synchronization.h"
 
 #if defined(ENABLE_IMXGPU)
 #if defined(ENABLE_OPENGL)
@@ -702,6 +703,11 @@ fbdev_head_create(struct fbdev_backend *backend, const char *device)
 		goto out_free;
 	}
 	close(fb_fd);
+
+	if (!strcmp(head->fb_info.id, "mxc_epdc_fb")) {
+		weston_log("mxc_epdc_fb was not supported by weston.\n");
+		goto out_free;
+	}
 
 	weston_head_init(&head->base, device);
 	weston_head_set_connection_status(&head->base, true);
