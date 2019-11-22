@@ -3596,7 +3596,7 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 
 		for (i = 0; i < p->count_formats; i++) {
 			if (p->formats[i].format == dmabuf->attributes.format
-				&& dmabuf->attributes.format == DRM_FORMAT_P010)
+				&& dmabuf->attributes.format == DRM_FORMAT_NV12_10LE40)
 				return true;
 		}
 	}
@@ -3626,24 +3626,30 @@ hdr10_metadata_set_metadata(struct wl_client *client,
 {
 	struct weston_compositor *compositor = wl_resource_get_user_data(resource);
 	struct drm_backend *b = to_drm_backend(compositor);
-	struct hdr_static_metadata hdr_metadata;
+	struct hdr_output_metadata hdr_metadata;
 
-	hdr_metadata.eotf = eotf & 0xffff;
-	hdr_metadata.type = type & 0xffff;
-	hdr_metadata.display_primaries_x[0] = (display_primaries_red >> 16) & 0xffff;
-	hdr_metadata.display_primaries_y[0] = display_primaries_red & 0xffff;
-	hdr_metadata.display_primaries_x[1] = (display_primaries_green >> 16) & 0xffff;
-	hdr_metadata.display_primaries_y[1] = display_primaries_green & 0xffff;
-	hdr_metadata.display_primaries_x[2] = (display_primaries_blue >> 16) & 0xffff;
-	hdr_metadata.display_primaries_y[2] = display_primaries_blue & 0xffff;
-	hdr_metadata.white_point_x = (white_point >> 16) & 0xffff;
-	hdr_metadata.white_point_y = white_point & 0xffff;
-	hdr_metadata.max_mastering_display_luminance =
+	if (eotf == 0) {
+		b->clean_hdr_blob = true;
+		return;
+	}
+
+	hdr_metadata.metadata_type = 0;
+	hdr_metadata.hdmi_metadata_type1.eotf = eotf & 0xff;
+	hdr_metadata.hdmi_metadata_type1.metadata_type = type & 0xff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[0].x = (display_primaries_red >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[0].y = display_primaries_red & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[1].x = (display_primaries_green >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[1].y = display_primaries_green & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[2].x = (display_primaries_blue >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.display_primaries[2].y = display_primaries_blue & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.white_point.x = (white_point >> 16) & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.white_point.y = white_point & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_display_mastering_luminance =
 				(mastering_display_luminance >> 16) & 0xffff;
-	hdr_metadata.min_mastering_display_luminance =
+	hdr_metadata.hdmi_metadata_type1.min_display_mastering_luminance =
 				mastering_display_luminance & 0xffff;
-	hdr_metadata.max_cll = max_cll & 0xffff;
-	hdr_metadata.max_fall = max_fall & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_cll = max_cll & 0xffff;
+	hdr_metadata.hdmi_metadata_type1.max_fall = max_fall & 0xffff;
 
 	drmModeCreatePropertyBlob(b->drm.fd, &hdr_metadata, sizeof(hdr_metadata), &b->hdr_blob_id);
 }
@@ -3721,6 +3727,7 @@ drm_backend_create(struct weston_compositor *compositor,
 		return NULL;
 
 	b->state_invalid = true;
+	b->clean_hdr_blob = false;
 	b->drm.fd = -1;
 	wl_array_init(&b->unused_crtcs);
 

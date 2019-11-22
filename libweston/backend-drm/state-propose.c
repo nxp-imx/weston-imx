@@ -554,7 +554,7 @@ drm_output_propose_state(struct weston_output *output_base,
 			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
 			if (dmabuf) {
 				if (dmabuf->attributes.format == DRM_FORMAT_NV12
-					|| dmabuf->attributes.format == DRM_FORMAT_P010
+					|| dmabuf->attributes.format == DRM_FORMAT_NV12_10LE40
 					|| dmabuf->attributes.format == DRM_FORMAT_YUYV) {
 					ps = drm_output_prepare_overlay_view(state, ev, mode);
 					if (ps)

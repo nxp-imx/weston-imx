@@ -234,6 +234,7 @@ struct drm_backend {
 
 	/* hdr10 metadata blob id */
 	unsigned int hdr_blob_id;
+	bool clean_hdr_blob;
 
 	/* we need these parameters in order to not fail drmModeAddFB2()
 	 * due to out of bounds dimensions, and then mistakenly set
