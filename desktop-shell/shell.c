@@ -3032,10 +3032,10 @@ desktop_shell_set_background(struct wl_client *client,
 		if(size){
 			n = sscanf(size, "%dx%d", &width, &height);
 			if (n == 2) {
-				if (surface->output->width > width)
+				if (surface->output->width > width && surface->output->height > height) {
 					surface->output->width = width;
-				if (surface->output->height > height)
 					surface->output->height = height;
+				}
 			}
 		}
 	}
@@ -3150,10 +3150,10 @@ desktop_shell_set_panel(struct wl_client *client,
 		if(size){
 			n = sscanf(size, "%dx%d", &width, &height);
 			if (n == 2) {
-				if (surface->output->width > width)
+				if (surface->output->width > width && surface->output->height > height) {
 					surface->output->width = width;
-				if (surface->output->height > height)
 					surface->output->height = height;
+				}
 			}
 		}
 	}

@@ -2276,10 +2276,10 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 		if(size){
 			n = sscanf(size, "%dx%d", &width, &height);
 			if (n == 2) {
-				if (scanout_state->src_w > (width << 16))
+				if (scanout_state->src_w > (width << 16) && scanout_state->src_h > (height << 16)) {
 					scanout_state->src_w = width << 16;
-				if (scanout_state->src_h > (height << 16))
 					scanout_state->src_h = height << 16;
+				}
 			}
 		}
 	}
