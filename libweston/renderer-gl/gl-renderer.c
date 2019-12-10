@@ -1126,8 +1126,17 @@ update_buffer_release_fences(struct weston_compositor *compositor,
 		gs = get_surface_state(view->surface);
 		buffer_release = gs->buffer_release_ref.buffer_release;
 
-		if (!gs->used_in_output_repaint || !buffer_release)
+		/* gplay-1.0 repeat paly video met GUI tearing
+		 * when switch to next video. Invalid buffer_release caused create
+		 * fence fail, a workaround that add glFinish to fixed the tearing.
+		 */
+		if (!gs->used_in_output_repaint)
 			continue;
+
+		if(!buffer_release) {
+			glFinish();
+			continue;
+		}
 
 		fence_fd = gl_renderer_create_fence_fd(output);
 		output->in_fence_fd = fence_fd;
