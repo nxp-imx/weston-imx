@@ -77,6 +77,7 @@ struct wl_viv_buffer
 	gctUINT32 fcValue;
 	gctUINT32 fcValueUpper;
 	gctUINT32 compressed;
+	gctUINT32 tileStatus_enabled;
 };
 
 typedef struct _g2dRECT
@@ -428,7 +429,7 @@ get_g2dSurface(struct wl_viv_buffer *buffer, struct g2d_surfaceEx *g2dSurface)
 	g2dSurface->base.height = buffer->height;
 	g2dSurface->base.rot	= G2D_ROTATION_0;
 
-	if(buffer->ts_addr)
+	if(buffer->ts_addr && buffer->tileStatus_enabled)
 	{
 		g2dSurface->tiling             |= G2D_TILED_STATUS;
 		g2dSurface->ts.ts_addr         = buffer->ts_addr;
