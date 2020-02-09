@@ -1497,8 +1497,10 @@ g2d_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 	struct linux_dmabuf_buffer *dmabuf;
 	weston_buffer_reference(&gs->buffer_ref, buffer);
 
-	if(buffer==NULL)
+	if (!buffer) {
+		gs->attached = 0;
 		return;
+	}
 
 	shm_buffer = wl_shm_buffer_get(buffer->resource);
 
