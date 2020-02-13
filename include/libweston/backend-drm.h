@@ -67,6 +67,7 @@ struct weston_drm_output_api {
 	/** The pixel format to be used by the output. Valid values are:
 	 * - NULL - The format set at backend creation time will be used;
 	 * - "xrgb8888";
+	 * - "argb8888"
 	 * - "rgb565"
 	 * - "xrgb2101010"
 	 */
@@ -176,6 +177,13 @@ struct weston_drm_backend_config {
 
 	/** Whether to use the pixman renderer instead of the OpenGL ES renderer. */
 	bool use_pixman;
+
+#if defined(ENABLE_IMXG2D)
+	/** Whether to use the g2d renderer instead of the OpenGL ES renderer. */
+	bool use_g2d;
+#endif
+
+	bool enable_overlay_view;
 
 	/** The seat to be used for input and output.
 	 *

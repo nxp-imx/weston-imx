@@ -375,9 +375,17 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
-	} else {
-		fb = drm_output_render_gl(state, damage);
 	}
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	else if (b->use_g2d)
+		fb = drm_output_render_g2d(state, damage);
+#endif
+#if defined(ENABLE_OPENGL)
+	else
+		fb = drm_output_render_gl(state, damage);
+#endif
+#endif
 
 	if (!fb) {
 		drm_plane_state_put_back(scanout_state);
@@ -688,6 +696,17 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode\n");
 			return -1;
 		}
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if (b->use_g2d) {
+		drm_output_fini_g2d(output);
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("failed to init output g2d state with "
+				   "new mode\n");
+			return -1;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else {
 		drm_output_fini_egl(output);
 		if (drm_output_init_egl(output, b) < 0) {
@@ -695,6 +714,8 @@ drm_output_switch_mode(struct weston_output *output_base, struct weston_mode *mo
 				   "new mode");
 			return -1;
 		}
+#endif
+#endif
 	}
 
 	return 0;
@@ -1338,6 +1359,10 @@ parse_gbm_format(const char *s, uint32_t default_value, uint32_t *gbm_format)
 		*gbm_format = default_value;
 
 		return 0;
+	}else if (strcmp(s, "argb8888") == 0) {
+        *gbm_format = GBM_FORMAT_ARGB8888;
+
+		return 0;
 	}
 
 	pinfo = pixel_format_get_info_by_drm_name(s);
@@ -1719,9 +1744,20 @@ drm_output_enable(struct weston_output *base)
 			weston_log("Failed to init output pixman state\n");
 			goto err;
 		}
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if (b->use_g2d) {
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("Failed to init output g2d state\n");
+			goto err;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else if (drm_output_init_egl(output, b) < 0) {
 		weston_log("Failed to init output gl state\n");
 		goto err;
+#endif
+#endif
 	}
 
 	drm_output_init_backlight(output);
@@ -1764,8 +1800,16 @@ drm_output_deinit(struct weston_output *base)
 
 	if (b->use_pixman)
 		drm_output_fini_pixman(output);
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	else if (b->use_g2d)
+		drm_output_fini_g2d(output);
+#endif
+#if defined(ENABLE_OPENGL)
 	else
 		drm_output_fini_egl(output);
+#endif
+#endif
 
 	/* Since our planes are no longer in use anywhere, remove their base
 	 * weston_plane's link from the plane stacking list, unless we're
@@ -2155,6 +2199,7 @@ drm_output_create(struct weston_compositor *compositor, const char *name)
 	output->base.disable = drm_output_disable;
 	output->base.attach_head = drm_output_attach_head;
 	output->base.detach_head = drm_output_detach_head;
+	output->base.in_fence_fd = -1;
 
 	output->destroy_pending = false;
 	output->disable_pending = false;
@@ -2405,6 +2450,16 @@ drm_destroy(struct weston_compositor *ec)
 	weston_launcher_destroy(ec->launcher);
 
 	wl_array_release(&b->unused_crtcs);
+	if(b->enable_overlay_view){
+		/* remove enable-overlay-view */
+		char *dir, *path;
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		remove(path);
+		free(path);
+	}
 
 	close(b->drm.fd);
 	free(b->drm.filename);
@@ -2802,6 +2857,8 @@ drm_backend_create(struct weston_compositor *compositor,
 	const char *seat_id = default_seat;
 	const char *session_seat;
 	int ret;
+	char *dir, *path;
+	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
 	session_seat = getenv("XDG_SEAT");
 	if (session_seat)
@@ -2822,6 +2879,10 @@ drm_backend_create(struct weston_compositor *compositor,
 
 	b->compositor = compositor;
 	b->use_pixman = config->use_pixman;
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	b->use_g2d = config->use_g2d;
+#endif
+	b->enable_overlay_view = config->enable_overlay_view;
 	b->pageflip_timeout = config->pageflip_timeout;
 	b->use_pixman_shadow = config->use_pixman_shadow;
 
@@ -2873,11 +2934,22 @@ drm_backend_create(struct weston_compositor *compositor,
 			weston_log("failed to initialize pixman renderer\n");
 			goto err_udev_dev;
 		}
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_IMXG2D)
+	} else if(b->use_g2d){
+		if (init_g2d(b) < 0) {
+			weston_log("failed to initialize g2d render\n");
+			goto err_udev_dev;
+		}
+#endif
+#if defined(ENABLE_OPENGL)
 	} else {
 		if (init_egl(b) < 0) {
 			weston_log("failed to initialize egl\n");
 			goto err_udev_dev;
 		}
+#endif
+#endif
 	}
 
 	b->base.destroy = drm_destroy;
@@ -2897,7 +2969,6 @@ drm_backend_create(struct weston_compositor *compositor,
 			    compositor, b->udev, seat_id,
 			    config->configure_device) < 0) {
 		weston_log("failed to create input devices\n");
-		goto err_sprite;
 	}
 
 	if (drm_backend_create_heads(b, drm_device) < 0) {
@@ -2945,8 +3016,10 @@ drm_backend_create(struct weston_compositor *compositor,
 					    planes_binding, b);
 	weston_compositor_add_debug_binding(compositor, KEY_Q,
 					    recorder_binding, b);
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_OPENGL)
 	weston_compositor_add_debug_binding(compositor, KEY_W,
 					    renderer_switch_binding, b);
+#endif
 
 	if (compositor->renderer->import_dmabuf) {
 		if (linux_dmabuf_setup(compositor) < 0)
@@ -2982,6 +3055,17 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_udev_monitor;
 	}
 
+	if(b->enable_overlay_view){
+		/* create enable-overlay-view*/
+
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		close(open(path, O_CREAT | O_RDWR, mode));
+		free(path);
+	}
+
 	return b;
 
 err_udev_monitor:
@@ -2991,7 +3075,6 @@ err_drm_source:
 	wl_event_source_remove(b->drm_source);
 err_udev_input:
 	udev_input_destroy(&b->input);
-err_sprite:
 #ifdef BUILD_DRM_GBM
 	if (b->gbm)
 		gbm_device_destroy(b->gbm);
@@ -3012,7 +3095,21 @@ err_compositor:
 static void
 config_init_to_defaults(struct weston_drm_backend_config *config)
 {
+#if !defined(ENABLE_IMXGPU) || !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config->use_pixman = true;
 	config->use_pixman_shadow = true;
+#else
+	config->use_pixman = false;
+	config->use_pixman_shadow = false;
+	config->enable_overlay_view = 0;
+#endif
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+#if !defined(ENABLE_OPENGL)
+	config->use_g2d = 1;
+#else
+	config->use_g2d = 0;
+#endif
+#endif
 }
 
 WL_EXPORT int

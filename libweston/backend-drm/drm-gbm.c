@@ -39,13 +39,28 @@
 #include "drm-internal.h"
 #include "pixman-renderer.h"
 #include "pixel-formats.h"
-#include "renderer-gl/gl-renderer.h"
-#include "shared/weston-egl-ext.h"
 #include "linux-dmabuf.h"
 #include "linux-explicit-synchronization.h"
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
+#include "renderer-gl/gl-renderer.h"
+#include "shared/weston-egl-ext.h"
+#endif
+#if defined(ENABLE_IMXG2D)
+#include "renderer-g2d/g2d-renderer.h"
+#endif
+#endif
 
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
 struct gl_renderer_interface *gl_renderer;
+#endif
+#if defined(ENABLE_IMXG2D)
+struct g2d_renderer_interface *g2d_renderer;
+#endif
+#endif
 
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_OPENGL)
 static struct gbm_device *
 create_gbm_device(int fd)
 {
@@ -363,4 +378,145 @@ renderer_switch_binding(struct weston_keyboard *keyboard,
 
 	switch_to_gl_renderer(b);
 }
+#endif
+
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+int
+drm_backend_create_g2d_renderer(struct drm_backend *b)
+{
+	if (g2d_renderer->drm_display_create(b->compositor,
+					(void *)b->gbm) < 0) {
+		return -1;
+	}
+
+	return 0;
+}
+
+int
+init_g2d(struct drm_backend *b)
+{
+	g2d_renderer = weston_load_module("g2d-renderer.so",
+						 "g2d_renderer_interface");
+	if (!g2d_renderer) {
+		weston_log("Could not load g2d renderer\n");
+		return -1;
+	}
+
+	b->gbm = gbm_create_device(b->drm.fd);
+	if (!b->gbm)
+		return -1;
+
+	if (drm_backend_create_g2d_renderer(b) < 0) {
+		gbm_device_destroy(b->gbm);
+		return -1;
+	}
+
+	return 0;
+}
+
+int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
+{
+	int w = output->base.current_mode->width;
+	int h = output->base.current_mode->height;
+	uint32_t format = output->gbm_format;
+	enum g2d_format g2dFormat;
+	uint32_t i = 0;
+
+	switch (format) {
+		case GBM_FORMAT_XRGB8888:
+			g2dFormat = G2D_BGRX8888;
+			break;
+		case GBM_FORMAT_RGB565:
+			g2dFormat = G2D_RGB565;
+			break;
+		default:
+			weston_log("Unsupported pixman format 0x%x\n", format);
+			return -1;
+	}
+
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		struct g2d_surfaceEx* g2dSurface = &(output->g2d_image[i]);
+		int ret, dmafd = 0;
+		output->dumb[i] = drm_fb_create_dumb(b, w, h, format);
+		if (!output->dumb[i])
+			goto err;
+
+		ret = drmPrimeHandleToFD(b->drm.fd, output->dumb[i]->handles[0], DRM_CLOEXEC,
+				       &dmafd);
+		if(ret < 0)
+			goto err;
+
+		ret = g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
+						output->dumb[i]->map,
+						w, h,
+						output->dumb[i]->strides[0],
+						output->dumb[i]->size,
+						dmafd);
+		if (ret < 0)
+			goto err;
+	}
+
+	if (g2d_renderer->drm_output_create(&output->base) < 0)
+		goto err;
+
+	drm_output_init_cursor_egl(output, b);
+
+	return 0;
+
+err:
+	weston_log("drm_output_init_g2d failed.\n");
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		if (output->dumb[i])
+			drm_fb_unref(output->dumb[i]);
+
+		output->dumb[i] = NULL;
+	}
+
+	return -1;
+}
+
+void
+drm_output_fini_g2d(struct drm_output *output)
+{
+	unsigned int i;
+
+	pixman_region32_fini(&output->previous_damage);
+
+	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
+		drm_fb_unref(output->dumb[i]);
+		output->dumb[i] = NULL;
+	}
+	g2d_renderer->output_destroy(&output->base);
+}
+
+struct drm_fb *
+drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage)
+{
+	struct drm_output *output = state->output;
+	struct weston_compositor *ec = output->base.compositor;
+	pixman_region32_t total_damage, previous_damage;
+
+	pixman_region32_init(&total_damage);
+	pixman_region32_init(&previous_damage);
+
+	pixman_region32_copy(&previous_damage, damage);
+
+	pixman_region32_union(&total_damage, damage, &output->previous_damage);
+	pixman_region32_copy(&output->previous_damage, &previous_damage);
+
+	output->current_image ^= 1;
+
+	g2d_renderer->output_set_buffer(&output->base,
+					  &output->g2d_image[output->current_image]);
+
+	ec->renderer->repaint_output(&output->base, &total_damage);
+
+	pixman_region32_fini(&total_damage);
+	pixman_region32_fini(&previous_damage);
+
+	return drm_fb_ref(output->dumb[output->current_image]);
+}
+
+#endif
 

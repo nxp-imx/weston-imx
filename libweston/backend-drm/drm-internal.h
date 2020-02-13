@@ -41,7 +41,9 @@
 #include <assert.h>
 #include <sys/mman.h>
 #include <time.h>
-
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+#include <g2dExt.h>
+#endif
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -276,7 +278,11 @@ struct drm_backend {
 	bool atomic_modeset;
 
 	bool use_pixman;
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	bool use_g2d;
+#endif
 	bool use_pixman_shadow;
+	bool enable_overlay_view;
 
 	struct udev_input input;
 
@@ -511,6 +517,9 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	pixman_image_t *image[2];
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
 	pixman_region32_t previous_damage;
 
@@ -776,6 +785,7 @@ drm_backend_init_virtual_output_api(struct weston_compositor *compositor)
 #endif
 
 #ifdef BUILD_DRM_GBM
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_OPENGL)
 int
 init_egl(struct drm_backend *b);
 
@@ -791,6 +801,21 @@ drm_output_render_gl(struct drm_output_state *state, pixman_region32_t *damage);
 void
 renderer_switch_binding(struct weston_keyboard *keyboard,
 			const struct timespec *time, uint32_t key, void *data);
+#endif
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+int
+init_g2d(struct drm_backend *b);
+
+int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b);
+
+void
+drm_output_fini_g2d(struct drm_output *output);
+
+struct drm_fb *
+drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage);
+
+#endif
 #else
 inline static int
 init_egl(struct drm_backend *b)

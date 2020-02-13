@@ -669,7 +669,16 @@ usage(int error_code)
 		"  --seat=SEAT\t\tThe seat that weston should run on, instead of the seat defined in XDG_SEAT\n"
 		"  --tty=TTY\t\tThe tty to use\n"
 		"  --drm-device=CARD\tThe DRM device to use, e.g. \"card0\".\n"
-		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL)
+               "  --use-pixman\t\tUse the pixman (CPU) renderer (default: GL rendering)\n"
+#elif defined(ENABLE_IMXG2D)
+               "  --use-pixman\t\tUse the pixman (CPU) renderer (default: G2D rendering)\n"
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+               "  --use-g2d=1\t\tUse the G2D renderer (default: GL rendering)\n"
+#endif
+#endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n\n");
 #endif
 
@@ -2496,23 +2505,43 @@ load_drm_backend(struct weston_compositor *c,
 	struct weston_config_section *section;
 	struct wet_compositor *wet = to_wet_compositor(c);
 	int ret = 0;
+#if defined(ENABLE_IMXG2D)
+	uint32_t use_g2d;
+#endif
+	bool use_pixman_config_ = false;
+	bool use_pixman_ = false;
+	uint32_t enable_overlay_view;
 
 	wet->drm_use_current_mode = false;
 
 	section = weston_config_get_section(wc, "core", NULL, NULL);
-	weston_config_section_get_bool(section, "use-pixman", &config.use_pixman,
+	weston_config_section_get_bool(section, "use-pixman", &use_pixman_config_,
 				       false);
+	use_pixman_ = use_pixman_config_;
 
 	const struct weston_option options[] = {
 		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
 		{ WESTON_OPTION_INTEGER, "tty", 0, &config.tty },
 		{ WESTON_OPTION_STRING, "drm-device", 0, &config.specific_device },
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
-		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#if defined(ENABLE_IMXGPU)
+#if defined(ENABLE_OPENGL) || defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &use_pixman_ },
+#endif
+#if defined(ENABLE_OPENGL) && defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_INTEGER, "use-g2d", 0, &config.use_g2d },
+#endif
+#endif
+		{ WESTON_OPTION_INTEGER, "enable-overlay-view", 0, &config.enable_overlay_view },
 	};
 
 	parse_options(options, ARRAY_LENGTH(options), argc, argv);
+#if !defined(ENABLE_IMXGPU) || !defined(ENABLE_OPENGL) && !defined(ENABLE_IMXG2D)
+	config.use_pixman = use_pixman_;
 
+#elif !defined(ENABLE_OPENGL)
+	config.use_g2d = 1;
+#endif
 	section = weston_config_get_section(wc, "core", NULL, NULL);
 	weston_config_section_get_string(section,
 					 "gbm-format", &config.gbm_format,
@@ -2521,7 +2550,13 @@ load_drm_backend(struct weston_compositor *c,
 	                               &config.pageflip_timeout, 0);
 	weston_config_section_get_bool(section, "pixman-shadow",
 				       &config.use_pixman_shadow, true);
+#if defined(ENABLE_IMXG2D)
+	weston_config_section_get_uint(section, "use-g2d", &use_g2d, 0);
+	config.use_g2d = config.use_g2d || use_g2d;
+#endif
 
+	weston_config_section_get_uint(section, "enable-overlay-view", &enable_overlay_view, 0);
+	config.enable_overlay_view = enable_overlay_view;
 	config.base.struct_version = WESTON_DRM_BACKEND_CONFIG_VERSION;
 	config.base.struct_size = sizeof(struct weston_drm_backend_config);
 	config.configure_device = configure_input_device;
