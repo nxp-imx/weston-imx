@@ -1026,6 +1026,7 @@ update_buffer_release_fences(struct weston_compositor *compositor,
 			continue;
 
 		fence_fd = gl_renderer_create_fence_fd(output);
+		output->in_fence_fd = fence_fd;
 
 		/* If we have a buffer_release then it means we support fences,
 		 * and we should be able to create the release fence. If we
