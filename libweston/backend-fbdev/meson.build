@@ -11,7 +11,6 @@ srcs_fbdev = [
 
 deps_fbdev = [
 	dep_libweston_private,
-	dep_libdrm_headers,
 	dep_session_helper,
 	dep_libinput_backend,
 	dependency('libudev', version: '>= 136'),

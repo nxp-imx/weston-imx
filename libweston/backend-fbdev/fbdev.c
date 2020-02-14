@@ -44,7 +44,6 @@
 
 #include <libudev.h>
 
-#include <drm_fourcc.h>
 #include "shared/helpers.h"
 #include <libweston/libweston.h>
 #include <libweston/backend-fbdev.h>
@@ -68,9 +67,7 @@
 
 #define NO_EGL_PLATFORM 0
 
-static const uint32_t wayland_formats[] = {
-	DRM_FORMAT_ARGB8888,
-};
+static const uint32_t wayland_formats[] = {};
 
 struct fbdev_backend {
 	struct weston_backend base;
