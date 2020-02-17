@@ -51,6 +51,8 @@
 #include <libweston/libweston.h>
 #include <libweston/backend-drm.h>
 #include <libweston/weston-log.h>
+#include <libweston/config-parser.h>
+#include "compositor/weston.h"
 #include "drm-internal.h"
 #include "shared/helpers.h"
 #include "shared/timespec-util.h"
@@ -356,6 +358,8 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_backend *b = to_drm_backend(c);
 	struct drm_fb *fb;
+	uint32_t width;
+	uint32_t height;
 
 	/* If we already have a client buffer promoted to scanout, then we don't
 	 * want to render. */
@@ -404,6 +408,15 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	scanout_state->dest_y = 0;
 	scanout_state->dest_w = scanout_state->src_w >> 16;
 	scanout_state->dest_h = scanout_state->src_h >> 16;
+
+	if ( b->shell_width > 0 && b->shell_height > 0) {
+		width = b->shell_width << 16;
+		height = b->shell_height << 16;
+		if (scanout_state->src_w > width && scanout_state->src_h > width){
+			scanout_state->src_w = width;
+			scanout_state->src_h = height;
+		}
+	}
 
 	pixman_region32_copy(&scanout_state->damage, damage);
 	if (output->base.zoom.active) {
@@ -2883,6 +2896,8 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->use_g2d = config->use_g2d;
 #endif
 	b->enable_overlay_view = config->enable_overlay_view;
+	b->shell_width = config->shell_width;
+	b->shell_height = config->shell_height;
 	b->pageflip_timeout = config->pageflip_timeout;
 	b->use_pixman_shadow = config->use_pixman_shadow;
 
@@ -3110,6 +3125,8 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 	config->use_g2d = 0;
 #endif
 #endif
+	config->shell_width = 0;
+	config->shell_height = 0;
 }
 
 WL_EXPORT int
