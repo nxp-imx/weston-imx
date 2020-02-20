@@ -323,6 +323,8 @@ struct drm_backend {
 	struct wl_listener session_listener;
 	uint32_t gbm_format;
 
+	bool is_underlay;
+
 	bool use_pixman;
 #if defined(ENABLE_IMXG2D)
 	bool use_g2d;
