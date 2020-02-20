@@ -582,7 +582,7 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 
 		if (mode == DRM_OUTPUT_PROPOSE_STATE_MIXED) {
 			assert(scanout_state != NULL);
-			if (scanout_state->zpos >= plane->zpos_max) {
+			if (!b->is_underlay && scanout_state->zpos >= plane->zpos_max) {
 				drm_debug(b, "\t\t\t\t[plane] not adding plane %d to "
 					     "candidate list: primary's zpos "
 					     "value (%"PRIu64") higher than "
