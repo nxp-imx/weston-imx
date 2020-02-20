@@ -301,6 +301,8 @@ struct drm_backend {
 	bool sprites_are_broken;
 	bool cursors_are_broken;
 
+	bool is_underlay;
+
 	bool atomic_modeset;
 
 	bool use_pixman;
