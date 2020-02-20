@@ -16,13 +16,14 @@ deps_fbdev = [
 	dependency('libudev', version: '>= 136'),
 ]
 
-if get_option('egl')
-	d = dependency('egl', required: false)
-	if not d.found()
-		error('fb-backend + gl-renderer requires egl which was not found.')
+if get_option('imxgpu')
+	dep_egl = dependency('egl', required: false)
+	if not dep_egl.found()
+		error('fbdev-backend with i.MX GPU requires egl which was not found.')
 	endif
-	deps_fbdev += d
+	deps_fbdev += dep_egl
 endif
+
 plugin_fbdev = shared_library(
 	'fbdev-backend',
 	srcs_fbdev,
