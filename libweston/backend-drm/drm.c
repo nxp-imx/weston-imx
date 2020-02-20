@@ -127,6 +127,33 @@ drm_backend_create_faked_zpos(struct drm_backend *b)
 }
 
 static void
+drm_backend_check_underlay_zpos(struct drm_backend *b)
+{
+	struct drm_plane *plane;
+	struct drm_plane *primary_plane = NULL;
+	struct drm_plane *overlay_plane = NULL;
+
+	wl_list_for_each(plane, &b->plane_list, link) {
+		if (plane->type == WDRM_PLANE_TYPE_PRIMARY){
+			primary_plane = plane;
+			break;
+		}
+	}
+
+	wl_list_for_each(plane, &b->plane_list, link) {
+		if (plane->type == WDRM_PLANE_TYPE_OVERLAY){
+			overlay_plane = plane;
+			break;
+		}
+	}
+	if (overlay_plane &&
+	    overlay_plane->zpos_min < primary_plane->zpos_min)
+		b->is_underlay = true;
+	else
+		b->is_underlay = false;
+}
+
+static void
 wl_array_remove_uint32(struct wl_array *array, uint32_t elm)
 {
 	uint32_t *pos, *end;
@@ -3231,6 +3258,9 @@ drm_backend_create(struct weston_compositor *compositor,
 
 	/* 'compute' faked zpos values in case HW doesn't expose any */
 	drm_backend_create_faked_zpos(b);
+
+	/* support HW underlay design */
+	drm_backend_check_underlay_zpos (b);
 
 	/* A this point we have some idea of whether or not we have a working
 	 * cursor plane. */
