@@ -84,8 +84,8 @@ drm_output_add_zpos_plane(struct drm_plane *plane, struct wl_list *planes)
 	}
 
 	h_plane = wl_container_of(planes->next, h_plane, link);
-	if (h_plane->plane->zpos_max >= plane->zpos_max) {
-		wl_list_insert(planes->prev, &plane_zpos->link);
+	if (h_plane->plane->zpos_max <= plane->zpos_max) {
+		wl_list_insert(planes, &plane_zpos->link);
 	} else {
 		struct drm_plane_zpos *p_zpos = NULL;
 
@@ -95,7 +95,7 @@ drm_output_add_zpos_plane(struct drm_plane *plane, struct wl_list *planes)
 		}
 
 		wl_list_for_each(p_zpos, planes, link) {
-			if (p_zpos->plane->zpos_max >
+			if (p_zpos->plane->zpos_max <
 			    plane_zpos->plane->zpos_max)
 				break;
 		}
@@ -637,7 +637,7 @@ drm_output_prepare_plane_view(struct drm_output_state *state,
 			      struct weston_view *ev,
 			      enum drm_output_propose_state_mode mode,
 			      struct drm_plane_state *scanout_state,
-			      uint64_t current_lowest_zpos)
+			      uint64_t current_highest_zpos)
 {
 	struct drm_output *output = state->output;
 	struct drm_backend *b = to_drm_backend(output->base.compositor);
@@ -669,12 +669,12 @@ drm_output_prepare_plane_view(struct drm_output_state *state,
 			continue;
 		}
 
-		if (plane->zpos_min >= current_lowest_zpos) {
+		if (plane->zpos_min >= current_highest_zpos) {
 			drm_debug(b, "\t\t\t\t[plane] not adding plane %d to "
 				     "candidate list: minium zpos (%"PRIu64") "
-				     "plane's above current lowest zpos "
+				     "plane's above current highest zpos "
 				     "(%"PRIu64")\n", plane->plane_id,
-				     plane->zpos_min, current_lowest_zpos);
+				     plane->zpos_min, current_highest_zpos);
 			continue;
 		}
 
@@ -731,10 +731,10 @@ drm_output_prepare_plane_view(struct drm_output_state *state,
 		const char *p_name = drm_output_get_plane_type_name(plane);
 		uint64_t zpos;
 
-		if (current_lowest_zpos == DRM_PLANE_ZPOS_INVALID_PLANE)
+		if (current_highest_zpos == DRM_PLANE_ZPOS_INVALID_PLANE)
 			zpos = plane->zpos_max;
 		else
-			zpos = MIN(current_lowest_zpos - 1, plane->zpos_max);
+			zpos = MIN(current_highest_zpos - 1, plane->zpos_max);
 
 		drm_debug(b, "\t\t\t\t[plane] plane %d picked "
 			     "from candidate list, type: %s\n",
@@ -774,7 +774,7 @@ drm_output_propose_state(struct weston_output *output_base,
 
 	bool renderer_ok = (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY);
 	int ret;
-	uint64_t current_lowest_zpos = DRM_PLANE_ZPOS_INVALID_PLANE;
+	uint64_t current_highest_zpos = DRM_PLANE_ZPOS_INVALID_PLANE;
 
 	assert(!output->state_last);
 	state = drm_output_state_duplicate(output->state_cur,
@@ -927,16 +927,16 @@ drm_output_propose_state(struct weston_output *output_base,
 
 		if (!force_renderer) {
 			drm_debug(b, "\t\t\t[plane] started with zpos %"PRIu64"\n",
-				      current_lowest_zpos);
+				      current_highest_zpos);
 			ps = drm_output_prepare_plane_view(state, ev, mode,
 							   scanout_state,
-							   current_lowest_zpos);
+							   current_highest_zpos);
 		}
 
 		if (ps) {
-			current_lowest_zpos = ps->zpos;
+			current_highest_zpos = ps->zpos;
 			drm_debug(b, "\t\t\t[plane] next zpos to use %"PRIu64"\n",
-				      current_lowest_zpos);
+				      current_highest_zpos);
 
 			/* If we have been assigned to an overlay or scanout
 			 * plane, add this area to the occluded region, so
