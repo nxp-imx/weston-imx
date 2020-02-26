@@ -1621,6 +1621,43 @@ g2d_renderer_surface_set_color(struct weston_surface *surface,
 	gs->color[3] = alpha;
 }
 
+/* create use-g2d-renderer */
+static void
+create_g2d_file(struct weston_output *output)
+{
+	char *dir, *path;
+	FILE *fp = NULL;
+
+	dir = getenv("XDG_RUNTIME_DIR");
+	path = malloc(strlen(dir) + 40);
+	strcpy(path, dir);
+	strcat(path, "/use-g2d-renderer");
+
+	fp = fopen(path, "w");
+	if(fp) {
+		weston_log("Create File %s\n", path);
+
+		if(output->transform == WL_OUTPUT_TRANSFORM_90
+			|| output->transform == WL_OUTPUT_TRANSFORM_270) {
+			fprintf(fp, "transform=1\n");
+		}
+		fclose(fp);
+	}
+	free(path);
+}
+
+static void
+remove_g2d_file()
+{
+	char *dir, *path;
+
+	dir = getenv("XDG_RUNTIME_DIR");
+	path = malloc(strlen(dir) + 40);
+	strcpy(path, dir);
+	strcat(path, "/use-g2d-renderer");
+	remove(path);
+	free(path);
+}
 
 static void
 g2d_renderer_output_destroy(struct weston_output *output)
@@ -1669,6 +1706,8 @@ g2d_renderer_output_destroy(struct weston_output *output)
 		go->mirror_fb_info = NULL;
 	}
 
+	remove_g2d_file();
+
 	free(go);
 }
 
@@ -1688,23 +1727,13 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 #endif
 	free(ec->renderer);
 	ec->renderer = NULL;
-
-	/* remove use-g2d-renderer */
-	char *dir, *path;
-	dir = getenv("XDG_RUNTIME_DIR");
-	path = malloc(strlen(dir) + 40);
-	strcpy(path, dir);
-	strcat(path, "/use-g2d-renderer");
-	remove(path);
-	free(path);
 }
 
 static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
-	char *dir, *path;
-	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+
 	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
 		return -1;
@@ -1748,15 +1777,6 @@ g2d_renderer_create(struct weston_compositor *ec)
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
 
 	wl_signal_init(&gr->destroy_signal);
-
-	/* create use-g2d-renderer */
-	
-	dir = getenv("XDG_RUNTIME_DIR");
-	path = malloc(strlen(dir) + 40);
-	strcpy(path, dir);
-	strcat(path, "/use-g2d-renderer");
-	close(open(path, O_CREAT | O_RDWR, mode));
-	free(path);
 
 	return 0;
 }
@@ -1804,6 +1824,9 @@ g2d_drm_renderer_output_create(struct weston_output *output)
 
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
 		pixman_region32_init(&go->buffer_damage[i]);
+
+	create_g2d_file(output);
+
 	return 0;
  }
 
@@ -2095,6 +2118,9 @@ g2d_fbdev_renderer_output_create(struct weston_output *output,
 		g2d_enable(gr->handle, G2D_DITHER);
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
 		pixman_region32_init(&go->buffer_damage[i]);
+
+	create_g2d_file(output);
+
 	return 0;
  }
 
