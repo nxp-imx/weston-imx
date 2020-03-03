@@ -393,6 +393,54 @@ g2d_getG2dFormat(IN gceSURF_FORMAT Format, enum g2d_format* g2dFormat)
 	}
 }
 
+static int
+g2d_getG2dFormat_from_pixman(IN pixman_format_code_t Format, enum g2d_format* g2dFormat)
+{
+	switch(Format)
+	{
+	case  PIXMAN_r5g6b5:
+		*g2dFormat = G2D_RGB565;
+		break;
+	case PIXMAN_a8b8g8r8:
+		*g2dFormat = G2D_RGBA8888;
+		break;
+	case PIXMAN_x8b8g8r8:
+		*g2dFormat = G2D_RGBA8888;
+		break;
+	case PIXMAN_a8r8g8b8:
+		*g2dFormat = G2D_BGRA8888;
+		break;
+	case PIXMAN_x8r8g8b8 :
+		*g2dFormat = G2D_BGRX8888;
+		break;
+	case PIXMAN_b5g6r5:
+		*g2dFormat = G2D_BGR565;
+		break;
+	case PIXMAN_b8g8r8a8:
+		*g2dFormat = G2D_ARGB8888;
+		break;
+	case PIXMAN_r8g8b8a8:
+		*g2dFormat = G2D_ABGR8888;
+		break;
+	case PIXMAN_b8g8r8x8:
+		*g2dFormat = G2D_XRGB8888;
+		break;
+	case PIXMAN_r8g8b8x8:
+		*g2dFormat = G2D_XBGR8888;
+		break;
+	case PIXMAN_yv12:
+		*g2dFormat = G2D_YV12;
+		break;
+	case PIXMAN_yuy2:
+		*g2dFormat = G2D_YUYV;
+		break;
+	default:
+		weston_log("Error in function %s, Format(%d) not supported\n", __func__, Format);
+		return -1;
+	}
+	return 0;
+}
+
 static void printG2dSurfaceInfo(struct g2d_surfaceEx* g2dSurface, const char* msg)
 {
 	weston_log("%s physicAddr = %x left = %d right = %d top=%d bottom=%d stride= %d tiling = %d, format=%d \n",
@@ -733,6 +781,53 @@ g2d_renderer_read_pixels(struct weston_output *output,
 				   uint32_t x, uint32_t y,
 				   uint32_t width, uint32_t height)
 {
+	struct g2d_surfaceEx  dstSurface;
+	struct g2d_surfaceEx  *srcSurface;
+	struct g2d_output_state *go = get_output_state(output);
+	struct g2d_renderer *gr = get_renderer(output->compositor);
+	struct g2d_buf *read_buf = NULL;
+	enum g2d_format dst_format;
+	g2dRECT	srcRect  = {x, y, x + width, y + height};
+	g2dRECT dstRect  = {0, 0, width, height};
+
+	if( g2d_getG2dFormat_from_pixman(format, &dst_format))
+		return -1;
+
+	read_buf = g2d_alloc(width * height * 4, 0);
+	if( !read_buf)
+		return -1;
+
+	if(go->drm_hw_buffer && gr->use_drm)
+	{
+		srcSurface = go->drm_hw_buffer;
+	}
+	else
+	{
+		if(go->nNumBuffers > 1 || go->directBlit)
+		{
+			srcSurface = &go->renderSurf[go->activebuffer];
+		}
+		else
+		{
+			srcSurface = &go->offscreenSurface;
+		}
+	}
+
+	dstSurface.base.planes[0] = read_buf->buf_paddr;
+	dstSurface.base.format = dst_format;
+	dstSurface.base.width  = width;
+	dstSurface.base.height = height;
+	dstSurface.base.stride = width;
+	dstSurface.base.rot    = G2D_FLIP_V;
+	if(g2d_blit_surface(gr->handle, srcSurface, &dstSurface, &srcRect, &dstRect)) {
+		g2d_free(read_buf);
+		return -1;
+	}
+	g2d_finish(gr->handle);
+
+	memcpy(pixels, read_buf->buf_vaddr, width * height * PIXMAN_FORMAT_BPP(format)/8);
+	g2d_free(read_buf);
+
 	return 0;
 }
 
@@ -1770,6 +1865,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->capabilities |= WESTON_CAP_ROTATION_ANY;
 	ec->capabilities |= WESTON_CAP_CAPTURE_YFLIP;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
+	ec->read_format = PIXMAN_a8r8g8b8;
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
