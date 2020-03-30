@@ -281,6 +281,7 @@ struct weston_output {
 	int disable_planes;
 	int destroying;
 	int in_fence_fd;
+	int buffer_release_fd;
 	struct wl_list feedback_list;
 
 	uint32_t transform;
