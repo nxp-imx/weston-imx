@@ -130,6 +130,8 @@ struct g2d_surface_state {
 	struct g2d_buf *shm_buf;
 	struct g2d_buf *dma_buf;
 	int shm_buf_length;
+	int shm_buf_clrcolor;
+	int set_shm_buf_clrcolor;
 	int bpp;
 
 	struct weston_surface *surface;
@@ -976,7 +978,20 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 				return;
 			}
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
-			g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
+
+			if(gs->g2d_surface.base.width == 1
+				&& gs->g2d_surface.base.height == 1
+				&& gs->set_shm_buf_clrcolor ==1)
+			{
+				struct g2d_surface tmp_surface = dstsurface->base;
+				memcpy(&tmp_surface.left, &clipRect.left, sizeof(clipRect));
+				tmp_surface.clrcolor = gs->shm_buf_clrcolor;
+				g2d_clear(gr->handle, &tmp_surface);
+			}
+			else
+			{
+				g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
+			}
 		}
 	}
 }
@@ -1264,6 +1279,17 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 			{
 				memcpy(dst + dst_plane_offset[i] + uv_dst_stride * j, src + src_plane_offset[i] + uv_src_stride * j, uv_src_stride);
 			}
+		}
+		/* Some garbage was found in 6dl board, This workaround will use
+		 * g2d_clear instead of g2d_blit for this special source
+		 */
+		if(buffer->width == 1
+			&& buffer->height == 1
+			&& wl_shm_buffer_get_format(buffer->shm_buffer) == WL_SHM_FORMAT_ARGB8888)
+		{
+			uint8_t *clrcolor = gs->shm_buf->buf_vaddr;
+			gs->shm_buf_clrcolor = (clrcolor[0] << 16) | (clrcolor[1] << 8) | (clrcolor[2]) | (clrcolor[3] << 24);
+			gs->set_shm_buf_clrcolor = 1;
 		}
 	}
 	wl_shm_buffer_end_access(buffer->shm_buffer);
