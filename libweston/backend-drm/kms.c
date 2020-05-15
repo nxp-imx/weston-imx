@@ -947,6 +947,15 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	struct drm_head *head;
 	struct drm_head *tmp;
 	int ret = 0;
+	int in_fence_fd = -1;
+
+	if(output->gbm_surface) {
+		/* in_fence_fd was not created when
+		 * the buffer_release was not exist or
+		 * the buffer was not used in the output.
+		 */
+		in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
+	}
 
 	drm_debug(b, "\t\t[atomic] %s output %lu (%s) state\n",
 		  (*flags & DRM_MODE_ATOMIC_TEST_ONLY) ? "testing" : "applying",
@@ -1050,6 +1059,10 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_IN_FENCE_FD,
 					      plane_state->in_fence_fd);
+		} else if (in_fence_fd >= 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY) {
+			ret |= plane_add_prop(req, plane,
+					      WDRM_PLANE_IN_FENCE_FD,
+					      in_fence_fd);
 		}
 
 		/* do note, that 'invented' zpos values are set as immutable */
