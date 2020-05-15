@@ -1049,20 +1049,11 @@ update_buffer_release_fences(struct weston_compositor *compositor,
 		gs = get_surface_state(view->surface);
 		buffer_release = gs->buffer_release_ref.buffer_release;
 
-		if (!gs->used_in_output_repaint)
-			continue;
-
-		fence_fd = gl_renderer_create_fence_fd(output);
-		output->in_fence_fd = fence_fd;
-
-		if(!buffer_release) {
-			/*Add a new buffer_release_fd to store the in_fence_fd when
-			 * no new buffer was attached.
-			 */
-			fd_update(&output->buffer_release_fd, fence_fd);
+		if(!buffer_release || !gs->used_in_output_repaint) {
 			continue;
 		}
 
+		fence_fd = gl_renderer_create_fence_fd(output);
 		/* If we have a buffer_release then it means we support fences,
 		 * and we should be able to create the release fence. If we
 		 * can't, something has gone horribly wrong, so disconnect the

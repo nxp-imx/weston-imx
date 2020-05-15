@@ -2251,8 +2251,6 @@ drm_output_create(struct weston_compositor *compositor, const char *name)
 	output->base.disable = drm_output_disable;
 	output->base.attach_head = drm_output_attach_head;
 	output->base.detach_head = drm_output_detach_head;
-	output->base.in_fence_fd = -1;
-	output->base.buffer_release_fd = -1;
 
 	output->destroy_pending = false;
 	output->disable_pending = false;
