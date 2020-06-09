@@ -3050,6 +3050,37 @@ handle_background_surface_destroy(struct wl_listener *listener, void *data)
 }
 
 static void
+desktop_shell_set_surface_size(struct desktop_shell *shell,
+				struct weston_surface *surface)
+{
+	struct weston_config_section *section;
+	if(surface->output &&
+		surface->output->transform == WL_OUTPUT_TRANSFORM_NORMAL) {
+		section = weston_config_get_section(wet_get_config(shell->compositor),
+						    "shell", NULL, NULL);
+		if (section) {
+			char *size;
+			int n;
+			int32_t width, height;
+
+			weston_config_section_get_string(section, "size", &size, NULL);
+
+			if(size){
+				n = sscanf(size, "%dx%d", &width, &height);
+				if (n == 2) {
+					if (surface->output->width > width &&
+						surface->output->height > height) {
+						surface->output->width = width;
+						surface->output->height = height;
+					}
+				}
+				free(size);
+			}
+		}
+	}
+}
+
+static void
 desktop_shell_set_background(struct wl_client *client,
 			     struct wl_resource *resource,
 			     struct wl_resource *output_resource,
@@ -3060,7 +3091,6 @@ desktop_shell_set_background(struct wl_client *client,
 		wl_resource_get_user_data(surface_resource);
 	struct shell_output *sh_output;
 	struct weston_view *view, *next;
-	struct weston_config_section *section;
 
 	if (surface->committed) {
 		wl_resource_post_error(surface_resource,
@@ -3079,26 +3109,7 @@ desktop_shell_set_background(struct wl_client *client,
 	surface->output = weston_head_from_resource(output_resource)->output;
 	weston_view_set_output(view, surface->output);
 
-	section = weston_config_get_section(wet_get_config(shell->compositor),
-					    "shell", NULL, NULL);
-	if (section) {
-		char *size;
-		int n;
-		int32_t width, height;
-
-		weston_config_section_get_string(section, "size", &size, NULL);
-
-		if(size){
-			n = sscanf(size, "%dx%d", &width, &height);
-			if (n == 2) {
-				if (surface->output->width > width && surface->output->height > height) {
-					surface->output->width = width;
-					surface->output->height = height;
-				}
-			}
-			free(size);
-		}
-	}
+	desktop_shell_set_surface_size(shell, surface);
 
 	sh_output = find_shell_output_from_weston_output(shell, surface->output);
 	if (sh_output->background_surface) {
@@ -3179,7 +3190,6 @@ desktop_shell_set_panel(struct wl_client *client,
 		wl_resource_get_user_data(surface_resource);
 	struct weston_view *view, *next;
 	struct shell_output *sh_output;
-	struct weston_config_section *section;
 
 	if (surface->committed) {
 		wl_resource_post_error(surface_resource,
@@ -3198,26 +3208,7 @@ desktop_shell_set_panel(struct wl_client *client,
 	surface->output = weston_head_from_resource(output_resource)->output;
 	weston_view_set_output(view, surface->output);
 
-	section = weston_config_get_section(wet_get_config(shell->compositor),
-					    "shell", NULL, NULL);
-	if (section) {
-		char *size;
-		int n;
-		int32_t width, height;
-
-		weston_config_section_get_string(section, "size", &size, NULL);
-
-		if(size){
-			n = sscanf(size, "%dx%d", &width, &height);
-			if (n == 2) {
-				if (surface->output->width > width && surface->output->height > height) {
-					surface->output->width = width;
-					surface->output->height = height;
-				}
-			}
-			free(size);
-		}
-	}
+	desktop_shell_set_surface_size(shell, surface);
 
 	sh_output = find_shell_output_from_weston_output(shell, surface->output);
 	if (sh_output->panel_surface) {

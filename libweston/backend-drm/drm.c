@@ -447,8 +447,9 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	scanout_state->dest_y = 0;
 	scanout_state->dest_w = scanout_state->src_w >> 16;
 	scanout_state->dest_h = scanout_state->src_h >> 16;
-
-	if ( b->shell_width > 0 && b->shell_height > 0) {
+	if ( output->base.transform == WL_OUTPUT_TRANSFORM_NORMAL &&
+		b->shell_width > 0 &&
+		b->shell_height > 0) {
 		width = b->shell_width << 16;
 		height = b->shell_height << 16;
 		if (scanout_state->src_w > width && scanout_state->src_h > width){
