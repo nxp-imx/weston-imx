@@ -3565,6 +3565,18 @@ sigint_helper(int sig)
 	raise(SIGUSR2);
 }
 
+static void
+wet_set_environment_variables(struct weston_compositor *c)
+{
+	struct weston_config_section *section;
+
+	section = weston_config_get_section(wet_get_config(c),
+					    "environment-variables", NULL, NULL);
+	if (section) {
+		weston_config_set_env(section);
+	}
+}
+
 WL_EXPORT int
 wet_main(int argc, char *argv[], const struct weston_testsuite_data *test_data)
 {
@@ -3776,6 +3788,8 @@ wet_main(int argc, char *argv[], const struct weston_testsuite_data *test_data)
 
 	weston_config_section_get_bool(section, "require-input",
 				       &wet.compositor->require_input, true);
+
+	wet_set_environment_variables(wet.compositor);
 
 	if (load_backend(wet.compositor, backend, &argc, argv, config) < 0) {
 		weston_log("fatal: failed to create compositor backend\n");
