@@ -108,6 +108,9 @@ weston_config_section_get_bool(struct weston_config_section *section,
 const char *
 weston_config_get_name_from_env(void);
 
+void
+weston_config_set_env(struct weston_config_section *section);
+
 struct weston_config *
 weston_config_parse(const char *name);
 
