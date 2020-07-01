@@ -363,6 +363,19 @@ weston_config_get_name_from_env(void)
 	return "weston.ini";
 }
 
+WL_EXPORT
+void
+weston_config_set_env(struct weston_config_section *section)
+{
+	struct weston_config_entry *e;
+
+	if (section == NULL)
+		return;
+	wl_list_for_each(e, &section->entry_list, link) {
+		setenv(e->key, e->value, 1);
+	}
+}
+
 static struct weston_config_section *
 config_add_section(struct weston_config *config, const char *name)
 {
