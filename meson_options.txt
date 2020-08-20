@@ -66,6 +66,34 @@ option(
 )
 
 option(
+	'renderer-g2d',
+	type: 'boolean',
+	value: true,
+	description: 'Weston renderer: G2D, i.MX G2D support'
+)
+
+option(
+	'egl',
+	type: 'boolean',
+	value: true,
+	description: 'Weston enable EGL'
+)
+
+option(
+	'opengl',
+	type: 'boolean',
+	value: true,
+	description: 'Build Weston with OpenGL support'
+)
+
+option(
+	'imxgpu',
+	type: 'boolean',
+	value: true,
+	description: 'Build Weston with i.MX GPU driver support'
+)
+
+option(
 	'deprecated-weston-launch',
 	type: 'boolean',
 	value: false,
