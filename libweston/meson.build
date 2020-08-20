@@ -78,6 +78,14 @@ if get_option('renderer-gl')
 	deps_libweston += dep_egl
 endif
 
+if get_option('renderer-g2d')
+	dep_egl = dependency('egl', required: false)
+	if not dep_egl.found()
+		error('libweston + g2d-renderer requires egl which was not found. Or, you can use \'-Drenderer-g2d=false\'.')
+	endif
+	deps_libweston += dep_egl
+endif
+
 lib_weston = shared_library(
 	'weston-@0@'.format(libweston_major),
 	srcs_libweston,
@@ -249,6 +257,7 @@ endif
 
 subdir('color-lcms')
 subdir('renderer-gl')
+subdir('renderer-g2d')
 subdir('backend-drm')
 subdir('backend-fbdev')
 subdir('backend-headless')
