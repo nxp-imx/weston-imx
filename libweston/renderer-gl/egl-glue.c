@@ -503,6 +503,8 @@ platform_to_extension(EGLenum platform)
 		return "x11";
 	case EGL_PLATFORM_SURFACELESS_MESA:
 		return "surfaceless";
+	case 0x31FF:
+		return "fbdev";
 	default:
 		assert(0 && "bad EGL platform enum");
 	}
@@ -549,6 +551,9 @@ gl_renderer_setup_egl_client_extensions(struct gl_renderer *gr)
 
 		return 0;
 	}
+
+	if(strcmp(extension_suffix, "fbdev") == 0)
+		return 0;
 
 	snprintf(s, sizeof s, "EGL_KHR_platform_%s", extension_suffix);
 	if (weston_check_egl_extension(extensions, s))

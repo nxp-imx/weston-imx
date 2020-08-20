@@ -70,6 +70,19 @@ foreach a : global_args_maybe
 		global_args += a
 	endif
 endforeach
+
+if get_option('egl')
+	global_args += '-DENABLE_EGL'
+endif
+
+if get_option('opengl')
+    config_h.set('ENABLE_OPENGL', '1')
+endif
+
+if get_option('imxgpu')
+    config_h.set('ENABLE_IMXGPU', '1')
+endif
+
 add_global_arguments(global_args, language: 'c')
 
 if cc.has_header_symbol('sys/sysmacros.h', 'major')
