@@ -41,6 +41,14 @@ deps_drm = [
 	dep_backlight
 ]
 
+if get_option('imxgpu')
+	dep_egl = dependency('egl', required: false)
+	if not dep_egl.found()
+		error('drm-backend with i.MX GPU requires egl which was not found.')
+	endif
+	deps_drm += dep_egl
+endif
+
 if get_option('renderer-gl')
 	dep_gbm = dependency('gbm', required: false)
 	if not dep_gbm.found()
