@@ -42,6 +42,10 @@
 #include <sys/mman.h>
 #include <time.h>
 
+#if defined(ENABLE_IMXG2D)
+#include <g2dExt.h>
+#include "renderer-g2d/g2d-renderer.h"
+#endif
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -625,7 +629,11 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	weston_renderbuffer_t renderbuffer[2];
+#if defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
+	pixman_region32_t previous_damage;
 
 	struct vaapi_recorder *recorder;
 	struct wl_listener recorder_frame_listener;
@@ -986,6 +994,19 @@ drm_output_fini_egl(struct drm_output *output);
 
 struct drm_fb *
 drm_output_render_gl(struct drm_output_state *state, pixman_region32_t *damage);
+#if defined(ENABLE_IMXG2D)
+int
+init_g2d(struct drm_backend *b);
+
+int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b);
+
+void
+drm_output_fini_g2d(struct drm_output *output);
+
+struct drm_fb *
+drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage);
+#endif
 
 int
 init_vulkan(struct drm_backend *b);

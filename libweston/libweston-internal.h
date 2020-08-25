@@ -210,6 +210,9 @@ struct weston_renderer {
 	const struct gl_renderer_interface *gl;
 	const struct vulkan_renderer_interface *vulkan;
 	const struct pixman_renderer_interface *pixman;
+#if defined(ENABLE_IMXG2D)
+	const struct g2d_renderer_interface *g2d;
+#endif
 
 	/* Sets the output border.
 	 *

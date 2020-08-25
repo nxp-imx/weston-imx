@@ -2438,6 +2438,9 @@ enum weston_renderer_type {
 	WESTON_RENDERER_PIXMAN = 2,
 	WESTON_RENDERER_GL = 3,
 	WESTON_RENDERER_VULKAN = 4,
+#if defined(ENABLE_IMXG2D)
+	WESTON_RENDERER_G2D = 5,
+#endif
 };
 
 struct weston_backend *

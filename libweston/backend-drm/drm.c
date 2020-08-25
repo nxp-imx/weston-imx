@@ -592,6 +592,10 @@ drm_output_render(struct drm_output_state *state)
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (c->renderer->type == WESTON_RENDERER_PIXMAN) {
 		fb = drm_output_render_pixman(state, &damage);
+#if defined(ENABLE_IMXG2D)
+	} else if (c->renderer->type == WESTON_RENDERER_G2D) {
+		fb = drm_output_render_g2d(state, &damage);
+#endif
 	} else if (c->renderer->type == WESTON_RENDERER_GL) {
 		fb = drm_output_render_gl(state, &damage);
 	} else if (c->renderer->type == WESTON_RENDERER_VULKAN) {
@@ -1345,6 +1349,15 @@ drm_output_apply_mode(struct drm_output *output)
 				   "new mode");
 			return -1;
 		}
+#if defined(ENABLE_IMXG2D)
+	} else if (b->compositor->renderer->type == WESTON_RENDERER_G2D) {
+		drm_output_fini_g2d(output);
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("failed to init output g2d state with "
+				   "new mode\n");
+			return -1;
+		}
+#endif
 	} else if (b->compositor->renderer->type == WESTON_RENDERER_VULKAN) {
 		drm_output_fini_vulkan(output);
 		if (drm_output_init_vulkan(output, b) < 0) {
@@ -2084,6 +2097,10 @@ parse_gbm_format(const char *s, const struct pixel_format_info *default_format,
 {
 	if (s == NULL) {
 		*format = default_format;
+
+		return 0;
+	}else if (strcmp(s, "argb8888") == 0) {
+		*format = pixel_format_get_info(DRM_FORMAT_ARGB8888);
 
 		return 0;
 	}
@@ -2838,6 +2855,13 @@ drm_output_enable(struct weston_output *base)
 			weston_log("Failed to init output vulkan state\n");
 			goto err_planes;
 		}
+#if defined(ENABLE_IMXG2D)
+	} else if (b->compositor->renderer->type == WESTON_RENDERER_G2D) {
+		if (drm_output_init_g2d(output, b) < 0) {
+			weston_log("Failed to init output g2d state\n");
+			goto err_planes;
+		}
+#endif
 	} else if (drm_output_init_egl(output, b) < 0) {
 		weston_log("Failed to init output gl state\n");
 		goto err_planes;
@@ -2891,6 +2915,10 @@ drm_output_deinit(struct weston_output *base)
 		drm_output_fini_pixman(output);
 	else if (b->compositor->renderer->type == WESTON_RENDERER_VULKAN)
 		drm_output_fini_vulkan(output);
+#if defined(ENABLE_IMXG2D)
+	else if (b->compositor->renderer->type == WESTON_RENDERER_G2D)
+		drm_output_fini_g2d(output);
+#endif
 	else
 		drm_output_fini_egl(output);
 
@@ -4721,6 +4749,14 @@ drm_backend_create(struct weston_compositor *compositor,
 			goto err_udev_dev;
 		}
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		if (init_g2d(b) < 0) {
+			weston_log("failed to initialize g2d renderer\n");
+			goto err_udev_dev;
+		}
+		break;
+#endif
 	default:
 		weston_log("unsupported renderer for DRM backend\n");
 		goto err_udev_dev;
@@ -4900,6 +4936,11 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 {
 	config->renderer = WESTON_RENDERER_AUTO;
 	config->use_pixman_shadow = true;
+#if defined(ENABLE_IMXG2D)
+#if !defined(BUILD_DRM_GBM)
+	config->renderer = WESTON_RENDERER_G2D;
+#endif
+#endif
 }
 
 WL_EXPORT int
