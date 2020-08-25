@@ -740,6 +740,9 @@ usage(int error_code)
 		"  --drm-device=CARD\tThe DRM device to use for rendering and output, e.g. \"card0\".\n"
 		"  --additional-devices=CARD\tSecondary DRM devices to use for output only, e.g. \"card1,card2\".\n"
 		"  --use-pixman\t\tUse the pixman (CPU) renderer (deprecated alias for --renderer=pixman)\n"
+#if defined(ENABLE_IMXG2D)
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+#endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n"
 		"  --continue-without-input\tAllow the compositor to start without input devices\n\n");
 #endif
@@ -3377,6 +3380,10 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 	bool without_input = false;
 	bool force_pixman = false;
 
+#if defined(ENABLE_IMXG2D)
+	bool use_g2d = false;
+#endif
+
 	wet->drm_use_current_mode = false;
 
 	section = weston_config_get_section(wc, "core", NULL, NULL);
@@ -3384,12 +3391,20 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 	weston_config_section_get_bool(section, "use-pixman", &force_pixman,
 				       false);
 
+#if defined(ENABLE_IMXG2D)
+	weston_config_section_get_bool(section, "use-g2d", &config.use_g2d,
+				       use_g2d);
+#endif
+
 	const struct weston_option options[] = {
 		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
 		{ WESTON_OPTION_STRING, "drm-device", 0, &config.specific_device },
 		{ WESTON_OPTION_STRING, "additional-devices", 0, &config.additional_devices},
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &force_pixman },
+#if defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_BOOLEAN, "use-g2d", 0, &config.use_g2d },
+#endif
 		{ WESTON_OPTION_BOOLEAN, "continue-without-input", false, &without_input }
 	};
 
@@ -3400,6 +3415,10 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 		return -1;
 	} else if (force_pixman) {
 		config.renderer = WESTON_RENDERER_PIXMAN;
+#if defined(ENABLE_IMXG2D)
+	}else if (config.use_g2d) {
+		config.renderer = WESTON_RENDERER_G2D;
+#endif
 	} else {
 		config.renderer = renderer;
 	}

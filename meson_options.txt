@@ -72,6 +72,13 @@ option(
 )
 
 option(
+	'renderer-g2d',
+	type: 'boolean',
+	value: true,
+	description: 'Weston renderer: G2D, i.MX G2D support'
+)
+
+option(
 	'xwayland',
 	type: 'boolean',
 	value: true,

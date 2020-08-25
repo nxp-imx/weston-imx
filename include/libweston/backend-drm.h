@@ -204,6 +204,11 @@ struct weston_drm_backend_config {
 	/** Select the renderer type to use */
 	enum weston_renderer_type renderer;
 
+#if defined(ENABLE_IMXG2D)
+	/** Whether to use the g2d renderer instead of the OpenGL ES renderer. */
+	bool use_g2d;
+#endif
+
 	/** The seat to be used for input and output.
 	 *
 	 * If seat_id is NULL, the seat is taken from XDG_SEAT environment
@@ -218,6 +223,7 @@ struct weston_drm_backend_config {
 	 * Valid values are:
 	 * - NULL - The default format ("xrgb8888") will be used;
 	 * - "xrgb8888";
+	 * - "argb8888"
 	 * - "rgb565"
 	 * - "xrgb2101010"
 	 * The backend will take ownership of the format pointer and will free
