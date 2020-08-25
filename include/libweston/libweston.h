@@ -2264,6 +2264,9 @@ enum weston_renderer_type {
 	WESTON_RENDERER_NOOP = 1,
 	WESTON_RENDERER_PIXMAN = 2,
 	WESTON_RENDERER_GL = 3,
+#if defined(ENABLE_IMXG2D)
+	WESTON_RENDERER_G2D = 4,
+#endif
 };
 
 int
