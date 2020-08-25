@@ -707,14 +707,8 @@ drm_output_apply_state_legacy(struct drm_output_state *state)
 	 * legacy PageFlip API doesn't allow us to do clipping either. */
 	assert(scanout_state->src_x == 0);
 	assert(scanout_state->src_y == 0);
-	assert(scanout_state->src_w ==
-		(unsigned) (output->base.current_mode->width << 16));
-	assert(scanout_state->src_h ==
-		(unsigned) (output->base.current_mode->height << 16));
 	assert(scanout_state->dest_x == 0);
 	assert(scanout_state->dest_y == 0);
-	assert(scanout_state->dest_w == scanout_state->src_w >> 16);
-	assert(scanout_state->dest_h == scanout_state->src_h >> 16);
 	/* The legacy SetCrtc API doesn't support fences */
 	assert(scanout_state->in_fence_fd == -1);
 
@@ -933,6 +927,15 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	struct drm_mode *current_mode = to_drm_mode(output->base.current_mode);
 	struct drm_head *head;
 	int ret = 0;
+	int in_fence_fd = -1;
+
+	if(output->gbm_surface) {
+		/* in_fence_fd was not created when
+		 * the buffer_release was not exist or
+		 * the buffer was not used in the output.
+		 */
+		in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
+	}
 
 	drm_debug(b, "\t\t[atomic] %s output %lu (%s) state\n",
 		  (*flags & DRM_MODE_ATOMIC_TEST_ONLY) ? "testing" : "applying",
@@ -1018,6 +1021,10 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_IN_FENCE_FD,
 					      plane_state->in_fence_fd);
+		} else if (in_fence_fd >= 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY) {
+			ret |= plane_add_prop(req, plane,
+					      WDRM_PLANE_IN_FENCE_FD,
+					      in_fence_fd);
 		}
 
 		/* do note, that 'invented' zpos values are set as immutable */
@@ -1050,6 +1057,7 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	uint32_t flags;
 	int ret = 0;
+	drm_magic_t magic;
 
 	if (!req)
 		return -1;
@@ -1162,6 +1170,11 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 		goto out;
 	}
 
+	/*drm master was set by systemd in PM test, try to set the master back.*/
+	if (!(drmGetMagic(b->drm.fd, &magic) == 0 &&
+			drmAuthMagic(b->drm.fd, magic) == 0)) {
+		drmSetMaster(b->drm.fd);
+	}
 	ret = drmModeAtomicCommit(b->drm.fd, req, flags, b);
 	drm_debug(b, "[atomic] drmModeAtomicCommit\n");
 
