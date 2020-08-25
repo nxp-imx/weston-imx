@@ -840,14 +840,8 @@ drm_output_apply_state_legacy(struct drm_output_state *state)
 	 * legacy PageFlip API doesn't allow us to do clipping either. */
 	assert(scanout_state->src_x == 0);
 	assert(scanout_state->src_y == 0);
-	assert(scanout_state->src_w ==
-		(unsigned) (output->base.current_mode->width << 16));
-	assert(scanout_state->src_h ==
-		(unsigned) (output->base.current_mode->height << 16));
 	assert(scanout_state->dest_x == 0);
 	assert(scanout_state->dest_y == 0);
-	assert(scanout_state->dest_w == scanout_state->src_w >> 16);
-	assert(scanout_state->dest_h == scanout_state->src_h >> 16);
 	/* The legacy SetCrtc API doesn't support fences */
 	assert(scanout_state->in_fence_fd == -1);
 
