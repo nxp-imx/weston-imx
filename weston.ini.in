@@ -1,6 +1,15 @@
 [core]
-# i.MX: Disable idle timeout
+#gbm-format=argb8888
 idle-time=0
+#use-g2d=1
+#xwayland=true
+#enable-overlay-view=1
+
+#[shell]
+#size=1920x1080
+
+[libinput]
+touchscreen_calibrator=true
 
 #[output]
 #name=HDMI-A-1
