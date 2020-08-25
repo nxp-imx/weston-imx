@@ -73,6 +73,7 @@ drm_fb_addfb(struct drm_backend *b, struct drm_fb *fb)
 {
 	int ret = -EINVAL;
 	uint64_t mods[4] = { };
+	int width, height;
 	size_t i;
 
 	/* If we have a modifier set, we must only use the WithModifiers
@@ -82,7 +83,17 @@ drm_fb_addfb(struct drm_backend *b, struct drm_fb *fb)
 		 * for all planes. */
 		for (i = 0; i < ARRAY_LENGTH(mods) && fb->handles[i]; i++)
 			mods[i] = fb->modifier;
-		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
+			width = ALIGNTO (fb->width, 8);
+			height = ALIGNTO (fb->height, 256);
+		}else if(fb->modifier ==DRM_FORMAT_MOD_VIVANTE_SUPER_TILED){
+			width = ALIGNTO (fb->width, 64);
+			height = ALIGNTO (fb->height, 64);
+		} else {
+			width = fb->width;
+			height = fb->height;
+		}
+		ret = drmModeAddFB2WithModifiers(fb->fd, width, height,
 						 fb->format->format,
 						 fb->handles, fb->strides,
 						 fb->offsets, mods, &fb->fb_id,
@@ -215,6 +226,28 @@ drm_fb_destroy_dmabuf(struct drm_fb *fb)
 		gbm_bo_destroy(fb->bo);
 	drm_fb_destroy(fb);
 }
+
+#ifdef HAVE_GBM_MODIFIERS
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb)
+{
+       int gbm_aligned = 64;
+
+       if (fb){
+               switch(fb->modifier) {
+#if defined(ENABLE_IMXGPU)
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED_FC:
+                       case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED:
+                               gbm_aligned = 64;
+                               break;
+#endif
+                       default:
+                               break;
+               }
+       }
+       return gbm_aligned;
+}
+#endif
 
 static struct drm_fb *
 drm_fb_get_from_dmabuf(struct linux_dmabuf_buffer *dmabuf,
@@ -564,10 +597,13 @@ drm_fb_get_from_view(struct drm_output_state *state, struct weston_view *ev,
 		if (!fb)
 			goto unsuitable;
 	} else {
-		struct gbm_bo *bo;
+		struct gbm_bo *bo = NULL;
 
-		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
-				   buffer->resource, GBM_BO_USE_SCANOUT);
+		if(b->enable_overlay_view)
+		{
+			bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
+					   buffer->resource, GBM_BO_USE_SCANOUT);
+		}
 		if (!bo)
 			goto unsuitable;
 
