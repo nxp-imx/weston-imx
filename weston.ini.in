@@ -1,6 +1,7 @@
 [core]
 #gbm-format=argb8888
 idle-time=0
+#use-g2d=true
 xwayland=true
 
 #[shell]

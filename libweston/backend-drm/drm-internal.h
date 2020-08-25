@@ -42,6 +42,9 @@
 #include <sys/mman.h>
 #include <time.h>
 
+#if defined(ENABLE_IMXG2D)
+#include <g2dExt.h>
+#endif
 
 #include <xf86drm.h>
 #include <xf86drmMode.h>
@@ -318,6 +321,9 @@ struct drm_backend {
 	uint32_t gbm_format;
 
 	bool use_pixman;
+#if defined(ENABLE_IMXG2D)
+	bool use_g2d;
+#endif
 	bool use_pixman_shadow;
 
 	struct udev_input input;
@@ -581,6 +587,9 @@ struct drm_output {
 
 	struct drm_fb *dumb[2];
 	pixman_image_t *image[2];
+#if defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image[2];
+#endif
 	int current_image;
 	pixman_region32_t previous_damage;
 
@@ -874,6 +883,19 @@ drm_output_fini_egl(struct drm_output *output);
 
 struct drm_fb *
 drm_output_render_gl(struct drm_output_state *state, pixman_region32_t *damage);
+#if defined(ENABLE_IMXG2D)
+int
+init_g2d(struct drm_backend *b);
+
+int
+drm_output_init_g2d(struct drm_output *output, struct drm_backend *b);
+
+void
+drm_output_fini_g2d(struct drm_output *output);
+
+struct drm_fb *
+drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage);
+#endif
 
 #else
 inline static int

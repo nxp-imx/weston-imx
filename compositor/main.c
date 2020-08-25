@@ -685,6 +685,9 @@ usage(int error_code)
 		"  --seat=SEAT\t\tThe seat that weston should run on, instead of the seat defined in XDG_SEAT\n"
 		"  --drm-device=CARD\tThe DRM device to use, e.g. \"card0\".\n"
 		"  --use-pixman\t\tUse the pixman (CPU) renderer\n"
+#if defined(ENABLE_IMXG2D)
+		"  --use-g2d\t\tUse the G2D renderer (default: GL rendering)\n"
+#endif
 		"  --current-mode\tPrefer current KMS mode over EDID preferred mode\n"
 		"  --continue-without-input\tAllow the compositor to start without input devices\n\n");
 #endif
@@ -2889,6 +2892,9 @@ load_drm_backend(struct weston_compositor *c,
 	bool without_input = false;
 	bool use_pixman_default;
 	int ret = 0;
+#if defined(ENABLE_IMXG2D)
+	bool use_g2d;
+#endif
 
 	wet->drm_use_current_mode = false;
 
@@ -2902,14 +2908,30 @@ load_drm_backend(struct weston_compositor *c,
 	use_pixman_default = true;
 #endif
 
+#if defined(ENABLE_IMXG2D)
+#if !defined(BUILD_DRM_GBM)
+	use_g2d = true;
+#else
+	use_g2d = false;
+#endif
+#endif
+
 	weston_config_section_get_bool(section, "use-pixman", &config.use_pixman,
 				       use_pixman_default);
+
+#if defined(ENABLE_IMXG2D)
+	weston_config_section_get_bool(section, "use-g2d", &config.use_g2d,
+				       use_g2d);
+#endif
 
 	const struct weston_option options[] = {
 		{ WESTON_OPTION_STRING, "seat", 0, &config.seat_id },
 		{ WESTON_OPTION_STRING, "drm-device", 0, &config.specific_device },
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &config.use_pixman },
+#if defined(ENABLE_IMXG2D)
+		{ WESTON_OPTION_BOOLEAN, "use-g2d", 0, &config.use_g2d },
+#endif
 		{ WESTON_OPTION_BOOLEAN, "continue-without-input", false, &without_input }
 	};
 
