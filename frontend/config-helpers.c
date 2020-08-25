@@ -70,6 +70,9 @@ struct {
 } renderer_name_map[] = {
 	{ "auto", WESTON_RENDERER_AUTO },
 	{ "gl", WESTON_RENDERER_GL },
+#if defined(ENABLE_IMXG2D)
+	{ "g2d", WESTON_RENDERER_G2D },
+#endif
 	{ "noop", WESTON_RENDERER_NOOP },
 	{ "pixman", WESTON_RENDERER_PIXMAN },
 };

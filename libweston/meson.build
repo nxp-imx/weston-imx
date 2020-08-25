@@ -101,6 +101,14 @@ if get_option('backend-vnc')
 	deps_libweston += dep_pam
 endif
 
+if get_option('renderer-g2d')
+	dep_egl = dependency('egl', required: false)
+	if not dep_egl.found()
+		error('libweston + g2d-renderer requires egl which was not found. Or, you can use \'-Drenderer-g2d=false\'.')
+	endif
+	deps_libweston += dep_egl
+endif
+
 lib_weston = shared_library(
 	'weston-@0@'.format(libweston_major),
 	srcs_libweston,
@@ -226,6 +234,7 @@ dep_lib_gl_borders = declare_dependency(
 
 subdir('color-lcms')
 subdir('renderer-gl')
+subdir('renderer-g2d')
 subdir('backend-drm')
 subdir('backend-headless')
 subdir('backend-pipewire')

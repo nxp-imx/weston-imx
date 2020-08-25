@@ -563,7 +563,7 @@ struct weston_output {
 
 	struct wl_list animation_list;
 	struct weston_coord_global pos;
-	int32_t width, height;
+	int32_t x, y, width, height;
 
 	/** List of paint nodes in z-order, from top to bottom, maybe pruned
 	 *
@@ -1541,6 +1541,7 @@ struct weston_compositor {
 	const struct weston_pointer_grab_interface *default_pointer_grab;
 
 	/* Repaint state. */
+	struct weston_plane primary_plane;
 	uint32_t capabilities; /* combination of enum weston_capability */
 
 	struct weston_color_manager *color_manager;
@@ -1701,6 +1702,8 @@ struct weston_buffer_viewport {
 		 */
 		int32_t width, height;
 	} surface;
+
+	int changed;
 };
 
 struct weston_buffer_release {
@@ -1768,6 +1771,7 @@ struct weston_view {
 
 	struct wl_list link;             /* weston_compositor::view_list */
 	struct weston_layer_entry layer_link; /* part of geometry */
+	struct weston_plane *plane;
 
 	/* For weston_layer inheritance from another view */
 	struct weston_view *parent_view;
@@ -1870,6 +1874,7 @@ struct weston_surface_state {
 	enum weston_surface_status status;
 
 	/* wl_surface.attach */
+	int newly_attached;
 	struct weston_buffer *buffer;
 	struct wl_listener buffer_destroy_listener;
 
@@ -2467,6 +2472,9 @@ enum weston_renderer_type {
 	WESTON_RENDERER_NOOP = 1,
 	WESTON_RENDERER_PIXMAN = 2,
 	WESTON_RENDERER_GL = 3,
+#if defined(ENABLE_IMXG2D)
+	WESTON_RENDERER_G2D = 4,
+#endif
 };
 
 struct weston_backend *
