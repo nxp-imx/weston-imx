@@ -51,6 +51,8 @@
 #include <libweston/libweston.h>
 #include <libweston/backend-drm.h>
 #include <libweston/weston-log.h>
+#include <libweston/config-parser.h>
+#include "compositor/weston.h"
 #include "drm-internal.h"
 #include "shared/helpers.h"
 #include "shared/timespec-util.h"
@@ -2253,7 +2255,6 @@ drm_output_create(struct weston_compositor *compositor, const char *name)
 	output->base.disable = drm_output_disable;
 	output->base.attach_head = drm_output_attach_head;
 	output->base.detach_head = drm_output_detach_head;
-	output->base.in_fence_fd = -1;
 
 	output->destroy_pending = false;
 	output->disable_pending = false;
