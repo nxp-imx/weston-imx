@@ -333,7 +333,6 @@ struct weston_output {
 	uint64_t msc;        /* media stream counter */
 	int disable_planes;
 	int destroying;
-	int in_fence_fd;
 	struct wl_list feedback_list;
 
 	uint32_t transform;
