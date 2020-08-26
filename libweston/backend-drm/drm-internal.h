@@ -326,6 +326,9 @@ struct drm_backend {
 #endif
 	bool use_pixman_shadow;
 
+	uint32_t shell_width;
+	uint32_t shell_height;
+
 	struct udev_input input;
 
 	uint32_t pageflip_timeout;
