@@ -51,6 +51,8 @@
 #include <libweston/libweston.h>
 #include <libweston/backend-drm.h>
 #include <libweston/weston-log.h>
+#include <libweston/config-parser.h>
+#include "frontend/weston.h"
 #include "drm-internal.h"
 #include "shared/hash.h"
 #include "shared/helpers.h"
@@ -560,7 +562,10 @@ drm_output_render(struct drm_output_state *state)
 	struct drm_plane *scanout_plane = output->scanout_plane;
 	struct drm_property_info *damage_info =
 		&scanout_plane->props[WDRM_PLANE_FB_DAMAGE_CLIPS];
+	struct drm_backend *b = device->backend;
 	struct drm_fb *fb;
+	uint32_t width;
+	uint32_t height;
 	pixman_region32_t damage, scanout_damage;
 	pixman_box32_t *rects;
 	int n_rects;
@@ -619,6 +624,16 @@ drm_output_render(struct drm_output_state *state)
 	scanout_state->dest_y = 0;
 	scanout_state->dest_w = output->base.current_mode->width;
 	scanout_state->dest_h = output->base.current_mode->height;
+	if ( output->base.transform == WL_OUTPUT_TRANSFORM_NORMAL &&
+		b->shell_width > 0 &&
+		b->shell_height > 0) {
+		width = b->shell_width << 16;
+		height = b->shell_height << 16;
+		if (scanout_state->src_w > width && scanout_state->src_h > width){
+			scanout_state->src_w = width;
+			scanout_state->src_h = height;
+		}
+	}
 
 	scanout_state->zpos = scanout_plane->zpos_min;
 
@@ -4664,6 +4679,8 @@ drm_backend_create(struct weston_compositor *compositor,
 	wl_list_init(&b->kms_list);
 
 	b->compositor = compositor;
+	b->shell_width = config->shell_width;
+	b->shell_height = config->shell_height;
 	b->pageflip_timeout = config->pageflip_timeout;
 	b->use_pixman_shadow = config->use_pixman_shadow;
 	b->offload_blend_to_output = config->offload_blend_to_output;
@@ -4941,6 +4958,8 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 	config->renderer = WESTON_RENDERER_G2D;
 #endif
 #endif
+	config->shell_width = 0;
+	config->shell_height = 0;
 }
 
 WL_EXPORT int

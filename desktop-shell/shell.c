@@ -2672,11 +2672,43 @@ handle_background_surface_destroy(struct wl_listener *listener, void *data)
 }
 
 static void
+desktop_shell_set_surface_size(struct desktop_shell *shell,
+				struct weston_surface *surface)
+{
+	struct weston_config_section *section;
+	if(surface->output &&
+		surface->output->transform == WL_OUTPUT_TRANSFORM_NORMAL) {
+		section = weston_config_get_section(wet_get_config(shell->compositor),
+						    "shell", NULL, NULL);
+		if (section) {
+			char *size;
+			int n;
+			int32_t width, height;
+
+			weston_config_section_get_string(section, "size", &size, NULL);
+
+			if(size){
+				n = sscanf(size, "%dx%d", &width, &height);
+				if (n == 2) {
+					if (surface->output->width > width &&
+						surface->output->height > height) {
+						surface->output->width = width;
+						surface->output->height = height;
+					}
+				}
+				free(size);
+			}
+		}
+	}
+}
+
+static void
 desktop_shell_set_background(struct wl_client *client,
 			     struct wl_resource *resource,
 			     struct wl_resource *output_resource,
 			     struct wl_resource *surface_resource)
 {
+	struct desktop_shell *shell = wl_resource_get_user_data(resource);
 	struct weston_surface *surface =
 		wl_resource_get_user_data(surface_resource);
 	struct shell_output *sh_output;
@@ -2693,6 +2725,7 @@ desktop_shell_set_background(struct wl_client *client,
 		return;
 
 	surface->output = head->output;
+	desktop_shell_set_surface_size(shell, surface);
 	sh_output = weston_output_get_shell_private(surface->output);
 	if (sh_output->background_surface) {
 		wl_resource_post_error(surface_resource,
@@ -2795,6 +2828,7 @@ desktop_shell_set_panel(struct wl_client *client,
 			struct wl_resource *output_resource,
 			struct wl_resource *surface_resource)
 {
+	struct desktop_shell *shell = wl_resource_get_user_data(resource);
 	struct weston_surface *surface =
 		wl_resource_get_user_data(surface_resource);
 	struct shell_output *sh_output;
@@ -2811,6 +2845,7 @@ desktop_shell_set_panel(struct wl_client *client,
 		return;
 
 	surface->output = head->output;
+	desktop_shell_set_surface_size(shell, surface);
 	sh_output = weston_output_get_shell_private(surface->output);
 
 	if (sh_output->panel_surface) {

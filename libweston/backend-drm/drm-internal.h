@@ -260,6 +260,9 @@ struct drm_backend {
 
 	bool offload_blend_to_output;
 
+	uint32_t shell_width;
+	uint32_t shell_height;
+
 	struct udev_input input;
 
 	uint32_t pageflip_timeout;

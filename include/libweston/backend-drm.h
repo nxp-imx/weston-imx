@@ -267,6 +267,10 @@ struct weston_drm_backend_config {
 	 * "color-management" to be enabled.
 	 */
 	bool offload_blend_to_output;
+
+	/** Desktop shell size */
+	uint32_t shell_width;
+	uint32_t shell_height;
 };
 
 #ifdef  __cplusplus
