@@ -245,6 +245,10 @@ struct weston_drm_backend_config {
 
 	/** Use shadow buffer if using Pixman-renderer. */
 	bool use_pixman_shadow;
+
+	/** Desktop shell size */
+	uint32_t shell_width;
+	uint32_t shell_height;
 };
 
 #ifdef  __cplusplus
