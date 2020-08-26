@@ -3371,6 +3371,33 @@ wet_compositor_load_backend(struct weston_compositor *compositor,
 	return wb;
 }
 
+static void
+drm_backend_shell_configure(struct weston_compositor *c,
+		struct weston_drm_backend_config *config)
+{
+	struct weston_config_section *section;
+	section = weston_config_get_section(wet_get_config(c),
+					    "shell", NULL, NULL);
+
+	if (section) {
+		char *size;
+		int n;
+		uint32_t width = 0;
+		uint32_t height = 0;
+
+		weston_config_section_get_string(section, "size", &size, NULL);
+
+		if(size){
+			n = sscanf(size, "%dx%d", &width, &height);
+			if (n == 2 && width > 0 && height > 0) {
+				config->shell_width  = width;
+				config->shell_height = height;
+			}
+			free(size);
+		}
+	}
+}
+
 static int
 load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 		 struct weston_config *wc, enum weston_renderer_type renderer)
@@ -3441,6 +3468,8 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 	config.configure_device = configure_input_device;
 
 	warn_possible_tty();
+
+	drm_backend_shell_configure(c, &config);
 
 	wb = wet_compositor_load_backend(c, WESTON_BACKEND_DRM, &config.base,
 					 drm_heads_changed, NULL);
