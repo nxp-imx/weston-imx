@@ -58,6 +58,9 @@
 
 #ifdef ENABLE_EGL
 static PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_display = NULL;
+#ifndef PFNEGLUPDATEWAYLANDBUFFERWL
+typedef EGLBoolean (EGLAPIENTRYP PFNEGLUPDATEWAYLANDBUFFERWL)(EGLDisplay dpy, struct wl_resource *buffer, EGLint attribute);
+#endif
 #endif
 
 struct wl_viv_buffer
@@ -126,6 +129,7 @@ struct g2d_renderer {
 	PFNEGLBINDWAYLANDDISPLAYWL bind_display;
 	PFNEGLUNBINDWAYLANDDISPLAYWL unbind_display;
 	PFNEGLQUERYWAYLANDBUFFERWL query_buffer;
+	PFNEGLUPDATEWAYLANDBUFFERWL update_buffer;
 #endif
 	void *handle;
 	int use_drm;
@@ -776,6 +780,19 @@ ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
 	if (!buffer)
 		return 0;
 
+	if(buffer->type == WESTON_BUFFER_RENDERER_OPAQUE) {
+		if (!buffer->resource)
+			return 0;
+
+		/*Update vivBuffer and set g2d surface */
+		struct wl_viv_buffer *vivBuffer = wl_resource_get_user_data(buffer->resource);
+
+		if (gr->update_buffer)
+			gr->update_buffer(gr->egl_display, (void *)buffer->resource, EGL_WAYLAND_BUFFER_WL);
+
+		get_g2dSurface(vivBuffer, &gs->g2d_surface);
+	}
+
 	if (surface->acquire_fence_fd < 0)
 		return 0;
 
@@ -988,10 +1005,8 @@ static void
 g2d_renderer_attach_egl(struct weston_surface *es, struct weston_buffer *buffer)
 {
 	struct wl_viv_buffer *vivBuffer = wl_resource_get_user_data(buffer->resource);
-	struct g2d_surface_state *gs = get_surface_state(es);
 	buffer->width = vivBuffer->width;
 	buffer->height = vivBuffer->height;
-	get_g2dSurface(vivBuffer, &gs->g2d_surface);
 }
 
 static void
@@ -1664,6 +1679,8 @@ g2d_renderer_create(struct weston_compositor *ec)
 		(void *) eglGetProcAddress("eglUnbindWaylandDisplayWL");
 	gr->query_buffer =
 		(void *) eglGetProcAddress("eglQueryWaylandBufferWL");
+	gr->update_buffer =
+		(void *) eglGetProcAddress("eglUpdateWaylandBufferWL");
 	if (!get_platform_display)
 	{
 		get_platform_display = (void *) eglGetProcAddress(
