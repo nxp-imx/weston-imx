@@ -350,13 +350,13 @@ static void printG2dSurfaceInfo(struct g2d_surfaceEx* g2dSurface, const char* ms
 				g2dSurface->base.format);
 }
 
-static void
+static int
 get_g2dSurface(struct wl_viv_buffer *buffer, struct g2d_surfaceEx *g2dSurface)
 {
-	if(buffer->width < 0 || buffer->height < 0)
+	if(buffer->width <= 0 || buffer->height <= 0)
 	{
 		weston_log("invalid EGL buffer in function %s\n", __func__);
-		return;
+		return -EINVAL;
 	}
 	g2dSurface->base.format = buffer->format;
 	g2dSurface->tiling = buffer->tiling;
@@ -380,6 +380,8 @@ get_g2dSurface(struct wl_viv_buffer *buffer, struct g2d_surfaceEx *g2dSurface)
 		g2dSurface->ts.fc_value        = buffer->fcValue;
 		g2dSurface->ts.fc_value_upper  = buffer->fcValueUpper;
 	}
+
+	return 0;
 }
 
 static void
@@ -781,7 +783,10 @@ ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
 		if (gr->update_buffer)
 			gr->update_buffer(gr->egl_display, (void *)buffer->resource, EGL_WAYLAND_BUFFER_WL);
 
-		get_g2dSurface(vivBuffer, &gs->g2d_surface);
+		ret = get_g2dSurface(vivBuffer, &gs->g2d_surface);
+
+		if (ret < 0)
+			return ret;
 	}
 
 	if (surface->acquire_fence_fd < 0)
