@@ -966,6 +966,12 @@ drm_output_propose_state(struct weston_output *output_base,
 			drm_debug(b, "\t\t\t\t[view] not assigning view %p to plane "
 			             "(no buffer available)\n", ev);
 			force_renderer = true;
+		} else if (b->is_underlay){
+			struct linux_dmabuf_buffer *dmabuf = NULL;
+			struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
+			if (dmabuf)
+				goto prepare_plane;
 		}
 
 		if (pnode->surf_xform.transform != NULL ||
@@ -998,6 +1004,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		}
 
 		/* Now try to place it on a plane if we can. */
+prepare_plane:
 		if (!force_renderer) {
 			drm_debug(b, "\t\t\t[plane] started with zpos %"PRIu64"\n",
 				      current_highest_zpos);
