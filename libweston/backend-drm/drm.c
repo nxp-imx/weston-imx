@@ -444,13 +444,13 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 
 	scanout_state->src_x = 0;
 	scanout_state->src_y = 0;
-	scanout_state->src_w = fb->width << 16;
-	scanout_state->src_h = fb->height << 16;
+	scanout_state->src_w = output->base.current_mode->width << 16;
+	scanout_state->src_h = output->base.current_mode->height << 16;
 
 	scanout_state->dest_x = 0;
 	scanout_state->dest_y = 0;
-	scanout_state->dest_w = output->base.current_mode->width;
-	scanout_state->dest_h = output->base.current_mode->height;
+	scanout_state->dest_w = scanout_state->src_w >> 16;
+	scanout_state->dest_h = scanout_state->src_h >> 16;
 	if ( output->base.transform == WL_OUTPUT_TRANSFORM_NORMAL &&
 		b->shell_width > 0 &&
 		b->shell_height > 0) {
