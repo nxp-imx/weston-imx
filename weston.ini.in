@@ -3,6 +3,7 @@
 idle-time=0
 #use-g2d=true
 xwayland=true
+#repaint-window=16
 
 #[shell]
 #size=1920x1080
