@@ -2725,6 +2725,7 @@ load_drm_backend(struct weston_compositor *c,
 	config.use_g2d = config.use_g2d || use_g2d;
 #endif
 
+	weston_config_section_get_string(section, "drm-device", &config.specific_device, "");
 	weston_config_section_get_uint(section, "enable-overlay-view", &enable_overlay_view, 0);
 	config.enable_overlay_view = enable_overlay_view;
 	config.base.struct_version = WESTON_DRM_BACKEND_CONFIG_VERSION;

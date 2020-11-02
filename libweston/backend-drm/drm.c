@@ -3322,7 +3322,7 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->session_listener.notify = session_notify;
 	wl_signal_add(&compositor->session_signal, &b->session_listener);
 
-	if (config->specific_device)
+	if (config->specific_device && config->specific_device[0])
 		drm_device = open_specific_drm_device(b, config->specific_device);
 	else
 		drm_device = find_primary_gpu(b, seat_id);
