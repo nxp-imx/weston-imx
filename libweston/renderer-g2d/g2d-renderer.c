@@ -259,13 +259,13 @@ calculate_rect_with_transform(int surfaceWidth, int surfaceHeight,
 	case WL_OUTPUT_TRANSFORM_NORMAL:
 	default:
 		break;
-	case WL_OUTPUT_TRANSFORM_90:
+	case WL_OUTPUT_TRANSFORM_270:
 		rect->right = surfaceWidth - tmp.top;
 		rect->left = rect->right - (tmp.bottom - tmp.top);
 		rect->top = tmp.left;
 		rect->bottom = rect->top + (tmp.right - tmp.left);
 		break;
-	case WL_OUTPUT_TRANSFORM_270:
+	case WL_OUTPUT_TRANSFORM_90:
 		rect->left = tmp.top;
 		rect->right = rect->left + (tmp.bottom - tmp.top);
 		rect->bottom = surfaceHeight - tmp.left;
@@ -291,10 +291,10 @@ convert_transform_to_rot(uint32_t transform)
 		break;
 	case WL_OUTPUT_TRANSFORM_90:
 		/*For source rotation*/
-		rot = G2D_ROTATION_270;
+		rot = G2D_ROTATION_90;
 		break;
 	case WL_OUTPUT_TRANSFORM_270:
-		rot = G2D_ROTATION_90;
+		rot = G2D_ROTATION_270;
 		break;
 	case WL_OUTPUT_TRANSFORM_180:
 		rot = G2D_ROTATION_180;
@@ -703,7 +703,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 				return;
 		}
 		break;
-	case WL_OUTPUT_TRANSFORM_90:
+	case WL_OUTPUT_TRANSFORM_270:
 		if(dstrect->left < 0)
 		{
 			srcRect->bottom -= floorf((float)(-dstrect->left) * scale_h);
@@ -726,7 +726,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 				return;
 		}
 		break;
-	case WL_OUTPUT_TRANSFORM_270:
+	case WL_OUTPUT_TRANSFORM_90:
 		if(dstrect->left < 0)
 		{
 			srcRect->top += floorf((float)(-dstrect->left) * scale_h);
