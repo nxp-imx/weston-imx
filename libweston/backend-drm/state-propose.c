@@ -970,8 +970,12 @@ drm_output_propose_state(struct weston_output *output_base,
 			struct linux_dmabuf_buffer *dmabuf = NULL;
 			struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
 			dmabuf = linux_dmabuf_buffer_get(buffer->resource);
-			if (dmabuf)
-				goto prepare_plane;
+			if (dmabuf) {
+				if (dmabuf->attributes.format == DRM_FORMAT_ABGR8888)
+					force_renderer = true;
+				else
+					goto prepare_plane;
+			}
 		}
 
 		if (pnode->surf_xform.transform != NULL ||
