@@ -1140,26 +1140,32 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 
 static void
 g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
-			enum g2d_format *g2dFormat)
+			enum g2d_format *g2dFormat, int *bpp)
 {
 	switch (dmaformat) {
 		case DRM_FORMAT_ARGB8888:
 			*g2dFormat = G2D_BGRA8888;
+			*bpp = 4;
 			break;
 		case DRM_FORMAT_XRGB8888:
 			*g2dFormat = G2D_BGRX8888;
+			*bpp = 4;
 			break;
 		case DRM_FORMAT_RGB565:
 			*g2dFormat = G2D_RGB565;
+			*bpp = 2;
 			break;
 		case DRM_FORMAT_YUYV:
 			*g2dFormat = G2D_YUYV;
+			*bpp = 2;
 			break;
 		case DRM_FORMAT_NV12:
 			*g2dFormat = G2D_NV12;
+			*bpp = 1;
 			break;
 		case DRM_FORMAT_YUV420:
 			*g2dFormat = G2D_I420;
+			*bpp = 1;
 			break;
 		default:
 			*g2dFormat = -1;
@@ -1177,6 +1183,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	enum g2d_format g2dFormat;
 	unsigned int *paddr;
 	int i = 0;
+	int bpp = 1;
 
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
@@ -1187,7 +1194,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 		alignedWidth  = ALIGN_TO_16(buffer->width);
 		alignedHeight = ALIGN_TO_16(buffer->height);
 	}
-	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
+	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat, &bpp);
 
 	if (g2dFormat < 0)
 		return;
@@ -1211,7 +1218,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 		gs->g2d_surface.base.stride = alignedWidth;
 		gs->g2d_surface.tiling = G2D_SUPERTILED;
 	} else {
-		gs->g2d_surface.base.stride = alignedWidth;
+		gs->g2d_surface.base.stride = dmabuf->attributes.stride[0] / bpp;
 		gs->g2d_surface.tiling = G2D_LINEAR;
 	}
 	gs->g2d_surface.base.format = g2dFormat;
@@ -1264,11 +1271,12 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 	enum g2d_format g2dFormat;
 	unsigned int *paddr = NULL;
 	int i = 0;
+	int bpp = 1;
 
 	if (!dmabuf)
 		return false;
 
-	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat);
+	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat, &bpp);
 	if (g2dFormat < 0)
 		return false;
 
