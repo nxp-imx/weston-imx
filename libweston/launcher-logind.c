@@ -77,6 +77,7 @@ launcher_logind_take_device(struct launcher_logind *wl, uint32_t major,
 	bool b;
 	int r, fd;
 	dbus_bool_t paused;
+	int loop = 0;
 
 	m = dbus_message_new_method_call("org.freedesktop.login1",
 					 wl->spath,
@@ -94,9 +95,14 @@ launcher_logind_take_device(struct launcher_logind *wl, uint32_t major,
 		goto err_unref;
 	}
 
+retry:
 	reply = dbus_connection_send_with_reply_and_block(wl->dbus, m,
 							  -1, NULL);
 	if (!reply) {
+		sleep(1);
+		weston_log("dbus connection send fail and will retry\n");
+		if(loop++ < 10)
+			goto retry;
 		r = -ENODEV;
 		goto err_unref;
 	}
