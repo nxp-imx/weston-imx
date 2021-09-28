@@ -862,6 +862,11 @@ fbdev_output_reenable(struct fbdev_backend *backend,
 		return fbdev_output_enable(&output->base);
 	}
 
+#if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
+	if(backend->use_g2d)
+		return fbdev_output_enable(&output->base);
+#endif
+
 	/* Map the device if it has the same details as before. */
 	if (backend->use_pixman) {
 		if (fbdev_frame_buffer_map(output, fb_fd) < 0) {
