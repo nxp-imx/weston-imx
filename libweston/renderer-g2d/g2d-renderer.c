@@ -1205,7 +1205,7 @@ g2d_renderer_repaint_output(struct weston_output *output,
 
 	g2d_finish(gr->handle);
 
-	wl_signal_emit(&output->frame_signal, output);
+	wl_signal_emit(&output->frame_signal, output_damage);
 	if(!gr->use_drm)
 		copy_to_framebuffer(output, output_damage);
 }
