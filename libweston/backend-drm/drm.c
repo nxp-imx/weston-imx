@@ -3048,7 +3048,11 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 
 		for (i = 0; i < p->count_formats; i++) {
 			if (p->formats[i].format == dmabuf->attributes.format
+#if USE_DRM_FORMAT_NV15
+				&& dmabuf->attributes.format == DRM_FORMAT_NV15)
+#else
 				&& dmabuf->attributes.format == DRM_FORMAT_NV12_10LE40)
+#endif
 				return true;
 		}
 	}

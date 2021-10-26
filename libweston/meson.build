@@ -88,6 +88,7 @@ endif
 lib_weston = shared_library(
 	'weston-@0@'.format(libweston_major),
 	srcs_libweston,
+	c_args: drm_cflags,
 	include_directories: common_inc,
 	install: true,
 	version: '0.0.@0@'.format(libweston_revision),

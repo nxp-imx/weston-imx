@@ -159,7 +159,13 @@ dep_libm = cc.find_library('m')
 dep_libdl = cc.find_library('dl')
 dep_libdrm = dependency('libdrm', version: '>= 2.4.86')
 dep_libdrm_headers = dep_libdrm.partial_dependency(compile_args: true)
+dep_libdrm_107 = dependency('libdrm', version: '>= 2.4.107', required:false)
 dep_threads = dependency('threads')
+
+drm_cflags = []
+if dep_libdrm_107.found()
+	drm_cflags = ['-DUSE_DRM_FORMAT_NV15']
+endif
 
 subdir('include')
 subdir('protocol')
