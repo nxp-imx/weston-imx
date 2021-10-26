@@ -3111,9 +3111,17 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 		if (p->type != WDRM_PLANE_TYPE_OVERLAY)
 			continue;
 		struct weston_drm_format * format =
+#if USE_DRM_FORMAT_NV15
+			weston_drm_format_array_find_format (&p->formats, DRM_FORMAT_NV15);
+#else
 			weston_drm_format_array_find_format (&p->formats, DRM_FORMAT_NV12_10LE40);
+#endif
 
+#if USE_DRM_FORMAT_NV15
+		if (format && dmabuf->attributes.format == DRM_FORMAT_NV15)
+#else
 		if (format && dmabuf->attributes.format == DRM_FORMAT_NV12_10LE40)
+#endif
 			return true;
 	}
 
