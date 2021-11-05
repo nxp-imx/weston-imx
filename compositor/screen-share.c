@@ -859,11 +859,7 @@ shared_output_repainted(struct wl_listener *listener, void *data)
 	} else {
 		/* Damage in output coordinates */
 		pixman_region32_init(&damage);
-		if(!use_g2d){
-			pixman_region32_intersect(&damage, &so->output->region, current_damage);
-		}else{
-			pixman_region32_copy(&damage, &so->output->region);
-		}
+		pixman_region32_intersect(&damage, &so->output->region, current_damage);
 		pixman_region32_translate(&damage, -so->output->x, -so->output->y);
 	}
 
@@ -889,7 +885,7 @@ shared_output_repainted(struct wl_listener *listener, void *data)
 		width = r[i].x2 - r[i].x1;
 		height = r[i].y2 - r[i].y1;
 
-		if (do_yflip)
+		if (do_yflip && !use_g2d)
 			y_orig = so->output->current_mode->height - r[i].y2;
 		else
 			y_orig = y;
