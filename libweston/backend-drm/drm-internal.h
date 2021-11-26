@@ -600,11 +600,11 @@ struct drm_output {
 	 * yet acknowledged completion of state_cur. */
 	struct drm_output_state *state_last;
 
-	struct drm_fb *dumb[2];
-	pixman_image_t *image[2];
+	struct drm_fb *dumb[3];
+	pixman_image_t *image[3];
 #if defined(ENABLE_IMXG2D)
-	struct g2d_surfaceEx g2d_image[2];
-	int dumb_dmafd[2];
+	struct g2d_surfaceEx g2d_image[3];
+	int dumb_dmafd[3];
 #endif
 	int current_image;
 	pixman_region32_t previous_damage;
