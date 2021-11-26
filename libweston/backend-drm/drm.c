@@ -364,7 +364,7 @@ drm_output_render_pixman(struct drm_output_state *state,
 	struct drm_output *output = state->output;
 	struct weston_compositor *ec = output->base.compositor;
 
-	output->current_image ^= 1;
+	output->current_image = (output->current_image + 1) % ARRAY_LENGTH(output->dumb);
 
 	pixman_renderer_output_set_buffer(&output->base,
 					  output->image[output->current_image]);
