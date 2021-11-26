@@ -44,6 +44,7 @@
 
 #if defined(ENABLE_IMXG2D)
 #include <g2dExt.h>
+#include "renderer-g2d/g2d-renderer.h"
 #endif
 
 #include <xf86drm.h>
@@ -323,6 +324,7 @@ struct drm_backend {
 	bool use_pixman;
 #if defined(ENABLE_IMXG2D)
 	bool use_g2d;
+	struct g2d_renderer_interface *g2d_renderer;;
 #endif
 	bool use_pixman_shadow;
 

@@ -68,6 +68,8 @@ struct g2d_renderer_interface {
 				struct g2d_surfaceEx *buffer);
 
 	void (*output_destroy)(struct weston_output *output);
+
+	int (*get_surface_fence_fd)(struct g2d_surfaceEx *buffer);
 };
 
 #endif
