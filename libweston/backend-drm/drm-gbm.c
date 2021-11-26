@@ -40,15 +40,9 @@
 #include "pixman-renderer.h"
 #include "pixel-formats.h"
 #include "renderer-gl/gl-renderer.h"
-#if defined(ENABLE_IMXG2D)
-#include "renderer-g2d/g2d-renderer.h"
-#endif
 #include "shared/weston-egl-ext.h"
 #include "linux-dmabuf.h"
 #include "linux-explicit-synchronization.h"
-#if defined(ENABLE_IMXG2D)
-struct g2d_renderer_interface *g2d_renderer;
-#endif
 
 static struct gbm_device *
 create_gbm_device(int fd)
@@ -337,7 +331,7 @@ drm_output_render_gl(struct drm_output_state *state, pixman_region32_t *damage)
 static int
 drm_backend_create_g2d_renderer(struct drm_backend *b)
 {
-	if (g2d_renderer->drm_display_create(b->compositor,
+	if (b->g2d_renderer->drm_display_create(b->compositor,
 					(void *)b->gbm) < 0) {
 		return -1;
 	}
@@ -348,10 +342,10 @@ drm_backend_create_g2d_renderer(struct drm_backend *b)
 int
 init_g2d(struct drm_backend *b)
 {
-	g2d_renderer = weston_load_module("g2d-renderer.so",
+	b->g2d_renderer = weston_load_module("g2d-renderer.so",
 						 "g2d_renderer_interface",
 						 LIBWESTON_MODULEDIR);
-	if (!g2d_renderer) {
+	if (!b->g2d_renderer) {
 		weston_log("Could not load g2d renderer\n");
 		return -1;
 	}
@@ -404,7 +398,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 		if(ret < 0)
 			goto err;
 
-		ret = g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
+		ret = b->g2d_renderer->create_g2d_image(g2dSurface, g2dFormat,
 						output->dumb[i]->map,
 						w, h,
 						output->dumb[i]->strides[0],
@@ -414,7 +408,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 			goto err;
 	}
 
-	if (g2d_renderer->drm_output_create(&output->base) < 0)
+	if (b->g2d_renderer->drm_output_create(&output->base) < 0)
 		goto err;
 
 	drm_output_init_cursor_egl(output, b);
@@ -437,6 +431,7 @@ void
 drm_output_fini_g2d(struct drm_output *output)
 {
 	unsigned int i;
+	struct drm_backend *b = to_drm_backend(output->base.compositor);
 
 	pixman_region32_fini(&output->previous_damage);
 
@@ -444,7 +439,7 @@ drm_output_fini_g2d(struct drm_output *output)
 		drm_fb_unref(output->dumb[i]);
 		output->dumb[i] = NULL;
 	}
-	g2d_renderer->output_destroy(&output->base);
+	b->g2d_renderer->output_destroy(&output->base);
 }
 
 struct drm_fb *
@@ -452,6 +447,7 @@ drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage)
 {
 	struct drm_output *output = state->output;
 	struct weston_compositor *ec = output->base.compositor;
+	struct drm_backend *b = to_drm_backend(output->base.compositor);
 	pixman_region32_t total_damage, previous_damage;
 
 	pixman_region32_init(&total_damage);
@@ -464,7 +460,7 @@ drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage)
 
 	output->current_image ^= 1;
 
-	g2d_renderer->output_set_buffer(&output->base,
+	b->g2d_renderer->output_set_buffer(&output->base,
 					  &output->g2d_image[output->current_image]);
 
 	ec->renderer->repaint_output(&output->base, &total_damage, NULL);
