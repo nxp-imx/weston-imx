@@ -955,6 +955,11 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 		 */
 		in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
 	}
+#if defined(ENABLE_IMXG2D)
+	else if(b->use_g2d && b->g2d_renderer) {
+		in_fence_fd = b->g2d_renderer->get_surface_fence_fd(&output->g2d_image[output->current_image]);
+	}
+#endif
 
 	drm_debug(b, "\t\t[atomic] %s output %lu (%s) state\n",
 		  (*flags & DRM_MODE_ATOMIC_TEST_ONLY) ? "testing" : "applying",
