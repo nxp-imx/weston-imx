@@ -631,11 +631,11 @@ struct drm_output {
 	/* only set when a writeback screenshot is ongoing */
 	struct drm_writeback_state *wb_state;
 
-	struct drm_fb *dumb[2];
-	weston_renderbuffer_t renderbuffer[2];
+	struct drm_fb *dumb[3];
+	weston_renderbuffer_t renderbuffer[3];
 #if defined(ENABLE_IMXG2D)
-	struct g2d_surfaceEx g2d_image[2];
-	int dumb_dmafd[2];
+	struct g2d_surfaceEx g2d_image[3];
+	int dumb_dmafd[3];
 #endif
 	int current_image;
 	pixman_region32_t previous_damage;
