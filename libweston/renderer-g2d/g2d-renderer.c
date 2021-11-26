@@ -26,7 +26,7 @@
  * SOFTWARE.
  */
 
-#define _GNU_SOURCE
+#include "config.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -1180,6 +1180,42 @@ output_rotate_damage(struct weston_output *output,
 	pixman_region32_copy(&go->buffer_damage[go->current_buffer], output_damage);
 }
 
+#if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
+static void
+g2d_update_buffer_release_fences(struct weston_compositor *compositor,
+			     int fence_fd)
+{
+	struct weston_view *view;
+
+	wl_list_for_each_reverse(view, &compositor->view_list, link) {
+		struct g2d_surface_state *gs;
+		struct weston_buffer_release *buffer_release;
+
+		if (view->plane != &compositor->primary_plane)
+			continue;
+
+		gs = get_surface_state(view->surface);
+		buffer_release = gs->buffer_release_ref.buffer_release;
+
+		if(!buffer_release) {
+			continue;
+		}
+
+		/* If we have a buffer_release then it means we support fences,
+		 * and we should be able to create the release fence. If we
+		 * can't, something has gone horribly wrong, so disconnect the
+		 * client.
+		 */
+		if (fence_fd == -1) {
+			fd_clear(&buffer_release->fence_fd);
+			continue;
+		}
+
+		fd_update(&buffer_release->fence_fd, dup(fence_fd));
+	}
+}
+#endif
+
 static void
 g2d_renderer_repaint_output(struct weston_output *output,
 				 pixman_region32_t *output_damage)
@@ -1187,6 +1223,10 @@ g2d_renderer_repaint_output(struct weston_output *output,
 	struct weston_compositor *compositor = output->compositor;
 	struct g2d_renderer *gr = get_renderer(compositor);
 	pixman_region32_t buffer_damage, total_damage;
+#if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
+	struct g2d_output_state *go = get_output_state(output);
+#endif
+	int fence_fd = -1;
 
 	use_output(output);
 
@@ -1202,7 +1242,16 @@ g2d_renderer_repaint_output(struct weston_output *output,
 	pixman_region32_fini(&total_damage);
 	pixman_region32_fini(&buffer_damage);
 
-	g2d_finish(gr->handle);
+#if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
+	fence_fd = g2d_create_fence_fd(gr->handle);
+	g2d_update_buffer_release_fences(compositor, fence_fd);
+
+	fd_clear(&go->drm_hw_buffer->reserved[0]);
+	go->drm_hw_buffer->reserved[0] = fence_fd;
+#endif
+
+	if(fence_fd == -1)
+		g2d_finish(gr->handle);
 
 	wl_signal_emit(&output->frame_signal, output_damage);
 	if(!gr->use_drm)
@@ -1616,6 +1665,8 @@ g2d_renderer_attach(struct weston_surface *es, struct weston_buffer *buffer)
 	struct wl_shm_buffer *shm_buffer;
 	struct linux_dmabuf_buffer *dmabuf;
 	weston_buffer_reference(&gs->buffer_ref, buffer);
+	weston_buffer_release_reference(&gs->buffer_release_ref,
+					es->buffer_release_ref.buffer_release);
 
 	if (!buffer) {
 		gs->attached = 0;
@@ -1826,6 +1877,8 @@ g2d_renderer_output_destroy(struct weston_output *output)
 		free(go->mirror_fb_info);
 		go->mirror_fb_info = NULL;
 	}
+
+	fd_clear(&go->drm_hw_buffer->reserved[0]);
 
 	remove_g2d_file();
 
