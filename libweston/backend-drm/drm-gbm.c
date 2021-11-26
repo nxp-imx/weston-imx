@@ -511,7 +511,7 @@ drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage)
 	pixman_region32_union(&total_damage, damage, &output->previous_damage);
 	pixman_region32_copy(&output->previous_damage, &previous_damage);
 
-	output->current_image ^= 1;
+	output->current_image = (output->current_image + 1) % ARRAY_LENGTH(output->dumb);
 
 	g2d_renderer->output_set_buffer(&output->base,
 					  &output->g2d_image[output->current_image]);
