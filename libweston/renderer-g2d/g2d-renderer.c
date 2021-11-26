@@ -1774,6 +1774,12 @@ g2d_renderer_output_set_buffer(struct weston_output *output, struct g2d_surfaceE
 }
 
 static int
+g2d_renderer_get_surface_fence_fd(struct g2d_surfaceEx *buffer)
+{
+	return buffer->reserved[0];
+}
+
+static int
 g2d_drm_renderer_output_create(struct weston_output *output)
 {
 	struct g2d_output_state *go;
@@ -1818,6 +1824,7 @@ drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 	g2dSurface->base.rot	= G2D_ROTATION_0;
 	g2dSurface->base.clrcolor = 0xFF400000;
 	g2dSurface->tiling = G2D_LINEAR;
+	g2dSurface->reserved[0] = -1;
 
 	return 0;
 }
@@ -1829,4 +1836,5 @@ drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 	.create_g2d_image    = drm_create_g2d_image,
 	.output_set_buffer   = g2d_renderer_output_set_buffer,
 	.output_destroy      = g2d_renderer_output_destroy,
+	.get_surface_fence_fd = g2d_renderer_get_surface_fence_fd,
 };
