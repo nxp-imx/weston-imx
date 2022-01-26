@@ -2642,6 +2642,8 @@ drm_destroy(struct weston_compositor *ec)
 	wl_list_for_each_safe(base, next, &ec->head_list, compositor_link)
 		drm_head_destroy(to_drm_head(base));
 
+	weston_drm_format_array_fini(&b->supported_formats);
+
 	wl_list_for_each_safe(writeback, writeback_tmp,
 			      &b->writeback_connector_list, link)
 		drm_writeback_destroy(writeback);
@@ -2746,6 +2748,35 @@ drm_device_changed(struct weston_compositor *compositor,
 
 	compositor->session_active = added;
 	wl_signal_emit(&compositor->session_signal, compositor);
+}
+
+static const struct weston_drm_format_array *
+drm_get_supported_formats(struct weston_compositor *ec)
+{
+	struct drm_backend *b = to_drm_backend(ec);
+
+	return &b->supported_formats;
+}
+
+/* for drm backend, currently we only need expose overlay plane formats,
+ * because primary will been used by renderer */
+static int
+populate_supported_formats(struct drm_backend *b)
+{
+	int ret = 0;
+	struct drm_plane *plane;
+
+	wl_list_for_each(plane, &b->plane_list, link) {
+		if (plane->type != WDRM_PLANE_TYPE_OVERLAY)
+			continue;
+
+		ret = weston_drm_format_array_join(&b->supported_formats,
+						   &plane->formats);
+		if (ret < 0)
+			break;
+	}
+
+	return ret;
 }
 
 /**
@@ -3168,6 +3199,9 @@ drm_backend_create(struct weston_compositor *compositor,
 	b->base.create_output = drm_output_create;
 	b->base.device_changed = drm_device_changed;
 	b->base.can_scanout_dmabuf = drm_can_scanout_dmabuf;
+	b->base.get_supported_formats = drm_get_supported_formats;
+
+	weston_drm_format_array_init(&b->supported_formats);
 
 	weston_setup_vt_switch_bindings(compositor);
 
@@ -3185,6 +3219,9 @@ drm_backend_create(struct weston_compositor *compositor,
 
 	wl_list_init(&b->plane_list);
 	create_sprites(b);
+	ret = populate_supported_formats(b);
+	if (ret < 0)
+		goto populate_fail;
 
 	if (udev_input_init(&b->input,
 			    compositor, b->udev, seat_id,
@@ -3315,6 +3352,8 @@ err_drm_source:
 	wl_event_source_remove(b->drm_source);
 err_udev_input:
 	udev_input_destroy(&b->input);
+populate_fail:
+	weston_drm_format_array_fini(&b->supported_formats);
 	destroy_sprites(b);
 err_create_crtc_list:
 	drmModeFreeResources(res);
