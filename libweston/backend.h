@@ -140,6 +140,9 @@ struct weston_backend {
 	 *  exit deferred state.
 	 */
 	bool deferred;
+
+	const struct weston_drm_format_array *
+				   (*get_supported_formats)(struct weston_compositor *ec);
 };
 
 /* weston_head */

@@ -281,6 +281,8 @@ struct drm_backend {
 
 	/* True if we need a workaround for some very old kernels */
 	bool stale_timestamp_workaround;
+
+	struct weston_drm_format_array supported_formats;
 };
 
 struct drm_mode {
