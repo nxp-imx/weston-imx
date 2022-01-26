@@ -339,6 +339,8 @@ struct drm_backend {
 	bool shutting_down;
 
 	struct weston_log_scope *debug;
+
+	struct weston_drm_format_array supported_formats;
 };
 
 struct drm_mode {
