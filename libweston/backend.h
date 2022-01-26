@@ -134,6 +134,9 @@ struct weston_backend {
 	 * defined in weston_compositor_backend.
 	 */
 	enum weston_compositor_backend backend_type;
+
+	const struct weston_drm_format_array *
+				   (*get_supported_formats)(struct weston_compositor *ec);
 };
 
 /* weston_head */

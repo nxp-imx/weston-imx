@@ -35,6 +35,7 @@
 #include <libweston/libweston.h>
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
+#include "backend.h"
 #include "shared/os-compatibility.h"
 #include "shared/helpers.h"
 #include "libweston-internal.h"
@@ -1039,6 +1040,7 @@ bind_linux_dmabuf(struct wl_client *client,
 	const uint64_t *modifiers;
 	unsigned int num_modifiers;
 	unsigned int i;
+	struct weston_backend *backend;
 
 	resource = wl_resource_create(client, &zwp_linux_dmabuf_v1_interface,
 				      version, id);
@@ -1075,6 +1077,30 @@ bind_linux_dmabuf(struct wl_client *client,
 				   modifiers[i] == DRM_FORMAT_MOD_INVALID) {
 				zwp_linux_dmabuf_v1_send_format(resource,
 								fmt->format);
+			}
+		}
+	}
+
+	wl_list_for_each(backend, &compositor->backend_list, link) {
+		if (!backend->get_supported_formats)
+			continue;
+
+		supported_formats = backend->get_supported_formats(compositor);
+		wl_array_for_each(fmt, &supported_formats->arr) {
+			modifiers = weston_drm_format_get_modifiers(fmt, &num_modifiers);
+			for (i = 0; i < num_modifiers; i++) {
+				if (version >= ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION) {
+					uint32_t modifier_lo = modifiers[i] & 0xFFFFFFFF;
+					uint32_t modifier_hi = modifiers[i] >> 32;
+					zwp_linux_dmabuf_v1_send_modifier(resource,
+									  fmt->format,
+									  modifier_hi,
+									  modifier_lo);
+				} else if (modifiers[i] == DRM_FORMAT_MOD_LINEAR ||
+					   modifiers[i] == DRM_FORMAT_MOD_INVALID) {
+					zwp_linux_dmabuf_v1_send_format(resource,
+									fmt->format);
+				}
 			}
 		}
 	}
