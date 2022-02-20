@@ -1,4 +1,4 @@
-if not get_option('deprecated-backend-fbdev')
+if not get_option('backend-fbdev')
 	subdir_done()
 endif
 
