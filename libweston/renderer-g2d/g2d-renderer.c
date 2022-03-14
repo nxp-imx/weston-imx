@@ -1503,6 +1503,10 @@ g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
 			*g2dFormat = G2D_BGRA8888;
 			*bpp = 4;
 			break;
+		case DRM_FORMAT_ABGR8888:
+			*g2dFormat = G2D_RGBA8888;
+			*bpp = 4;
+			break;
 		case DRM_FORMAT_XRGB8888:
 			*g2dFormat = G2D_BGRX8888;
 			*bpp = 4;
@@ -1586,6 +1590,7 @@ g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 	int num;
 	static const int dma_formats[] = {
 		DRM_FORMAT_ARGB8888,
+		DRM_FORMAT_ABGR8888,
 		DRM_FORMAT_XRGB8888,
 		DRM_FORMAT_RGB565,
 		DRM_FORMAT_YUYV,
