@@ -535,6 +535,7 @@ g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_
 static void
 g2d_flip_surface(struct weston_output *output)
 {
+	int i;
 	struct g2d_output_state *go = get_output_state(output);
 	go->fb_info.varinfo.yoffset  = go->activebuffer * go->fb_info.y_resolution;
 
@@ -542,6 +543,16 @@ g2d_flip_surface(struct weston_output *output)
 	{
 		weston_log("FBIOPAN_DISPLAY Failed\n");
 	}
+
+	for (i = 0; i < go->clone_display_num; i++)
+	{
+		go->mirror_fb_info[i].varinfo.yoffset  = go->activebuffer * go->mirror_fb_info[i].y_resolution;
+		if(ioctl(go->mirror_fb_info[i].fb_fd, FBIOPAN_DISPLAY, &(go->mirror_fb_info[i].varinfo)) < 0)
+		{
+			weston_log("FBIOPAN_DISPLAY clone %d Failed\n", i);
+		}
+	}
+
 	go->activebuffer = (go->activebuffer + 1)  % go->nNumBuffers;
 }
 
@@ -581,17 +592,18 @@ copy_to_framebuffer(struct weston_output *output, pixman_region32_t* output_dama
 		int i = 0;
 		for(i = 0; i < go->clone_display_num; i++)
 		{
+			int idx = i * go->nNumBuffers + go->activebuffer;
 			g2dRECT srcRect  = {0, 0, go->renderSurf[go->activebuffer].base.width, go->renderSurf[go->activebuffer].base.height};
-			g2dRECT dstrect  = {0, 0, go->mirrorSurf[i].base.width, go->mirrorSurf[i].base.height};
+			g2dRECT dstrect  = {0, 0, go->mirrorSurf[idx].base.width, go->mirrorSurf[idx].base.height};
 			if(go->directBlit || go->nNumBuffers > 1)
 			{
 				g2d_blit_surface(gr->handle, &go->renderSurf[go->activebuffer],
-				&go->mirrorSurf[i], &srcRect, &dstrect);
+				&go->mirrorSurf[idx], &srcRect, &dstrect);
 			}
 			else
 			{
 				g2d_blit_surface(gr->handle, &go->offscreenSurface,
-					&go->mirrorSurf[i], &srcRect, &dstrect);
+					&go->mirrorSurf[idx], &srcRect, &dstrect);
 			}
 		}
 	}
@@ -2304,6 +2316,7 @@ g2d_fbdev_renderer_output_create(struct weston_output *output,
 	int clone_display_num = 0;
 	int count = 0;
 	int k=0, dispCount = 0;
+	int offset = 0;
 	char displays[5][32];
 	weston_log("g2d_renderer_output_create device=%s\n", device);
 	count = strlen(device);
@@ -2357,7 +2370,7 @@ g2d_fbdev_renderer_output_create(struct weston_output *output,
 
 	if(go->clone_display_num)
 	{
-		go->mirrorSurf = zalloc(sizeof(struct g2d_surfaceEx) * clone_display_num);
+		go->mirrorSurf = zalloc(sizeof(struct g2d_surfaceEx) * clone_display_num * go->nNumBuffers);
 		go->mirror_fb_info = zalloc(sizeof(struct fb_screeninfo) * clone_display_num);
 		if(go->mirrorSurf == NULL || go->mirror_fb_info == NULL)
 			return -1;
@@ -2369,9 +2382,15 @@ g2d_fbdev_renderer_output_create(struct weston_output *output,
 				weston_log("Open frame buffer failed.\n");
 				return -1;
 			}
-			get_G2dSurface_from_screeninfo(&go->mirror_fb_info[i], &go->mirrorSurf[i]);
-			go->mirrorSurf[i].base.planes[0] = go->mirror_fb_info[i].physical;
-			g2d_clear(gr->handle, &go->mirrorSurf[i].base);
+
+			offset = go->mirror_fb_info[i].stride_bytes * go->mirror_fb_info[i].y_resolution;
+			for(k = 0; k < go->nNumBuffers; k++)
+			{
+				int idx = i * go->nNumBuffers + k;
+				get_G2dSurface_from_screeninfo(&go->mirror_fb_info[i], &go->mirrorSurf[idx]);
+				go->mirrorSurf[idx].base.planes[0] = go->mirror_fb_info[i].physical + (offset * k);
+				g2d_clear(gr->handle, &go->mirrorSurf[idx].base);
+			}
 		}
 	}
 	g2d_finish(gr->handle);
