@@ -40,6 +40,7 @@
 #include <drm_fourcc.h>
 #include <poll.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 #include <libweston/libweston.h>
 #include "g2d-renderer.h"
@@ -130,6 +131,12 @@ struct g2d_renderer {
 	PFNEGLUNBINDWAYLANDDISPLAYWL unbind_display;
 	PFNEGLQUERYWAYLANDBUFFERWL query_buffer;
 	PFNEGLUPDATEWAYLANDBUFFERWL update_buffer;
+
+	EGLDeviceEXT egl_device;
+	const char *drm_device;
+
+	PFNEGLQUERYDISPLAYATTRIBEXTPROC query_display_attrib;
+	PFNEGLQUERYDEVICESTRINGEXTPROC query_device_string;
 #endif
 	void *handle;
 	int use_drm;
@@ -1699,6 +1706,73 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	remove_g2d_file();
 }
 
+static void
+g2d_renderer_set_egl_device(struct g2d_renderer *gr)
+{
+	EGLAttrib attrib;
+	const char *extensions;
+
+	if (!gr->query_display_attrib(gr->egl_display, EGL_DEVICE_EXT, &attrib)) {
+		weston_log("failed to get EGL device\n");
+		return;
+	}
+
+	gr->egl_device = (EGLDeviceEXT) attrib;
+
+	extensions = gr->query_device_string(gr->egl_device, EGL_EXTENSIONS);
+	if (!extensions) {
+		weston_log("failed to get EGL extensions\n");
+		return;
+	}
+
+	/* Try to query the render node using EGL_DRM_RENDER_NODE_FILE_EXT */
+	if (weston_check_egl_extension(extensions, "EGL_EXT_device_drm_render_node"))
+		gr->drm_device = gr->query_device_string(gr->egl_device,
+							 EGL_DRM_RENDER_NODE_FILE_EXT);
+
+	/* The extension is not supported by the Mesa version of the system or
+	 * the query failed. Fallback to EGL_DRM_DEVICE_FILE_EXT */
+	if (!gr->drm_device && weston_check_egl_extension(extensions, "EGL_EXT_device_drm"))
+		gr->drm_device = gr->query_device_string(gr->egl_device,
+							 EGL_DRM_DEVICE_FILE_EXT);
+
+	if (!gr->drm_device)
+		weston_log("failed to query DRM device from EGL\n");
+}
+
+
+static int
+create_default_dmabuf_feedback(struct weston_compositor *ec,
+			       struct g2d_renderer *gr)
+{
+	struct stat dev_stat;
+	struct weston_dmabuf_feedback_tranche *tranche;
+	uint32_t flags = 0;
+
+	if (stat(gr->drm_device, &dev_stat) != 0) {
+		weston_log("%s: device disappeared, so we can't recover\n", __func__);
+		abort();
+	}
+
+	ec->default_dmabuf_feedback =
+		weston_dmabuf_feedback_create(dev_stat.st_rdev);
+	if (!ec->default_dmabuf_feedback)
+		return -1;
+
+	tranche =
+		weston_dmabuf_feedback_tranche_create(ec->default_dmabuf_feedback,
+						      ec->dmabuf_feedback_format_table,
+						      dev_stat.st_rdev, flags,
+						      RENDERER_PREF);
+	if (!tranche) {
+		weston_dmabuf_feedback_destroy(ec->default_dmabuf_feedback);
+		ec->default_dmabuf_feedback = NULL;
+		return -1;
+	}
+
+	return 0;
+}
+
 static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
@@ -1728,6 +1802,10 @@ g2d_renderer_create(struct weston_compositor *ec)
 		(void *) eglGetProcAddress("eglQueryWaylandBufferWL");
 	gr->update_buffer =
 		(void *) eglGetProcAddress("eglUpdateWaylandBufferWL");
+	gr->query_display_attrib =
+		(void *) eglGetProcAddress("eglQueryDisplayAttribEXT");
+	gr->query_device_string =
+		(void *) eglGetProcAddress("eglQueryDeviceStringEXT");
 	if (!get_platform_display)
 	{
 		get_platform_display = (void *) eglGetProcAddress(
@@ -1773,6 +1851,7 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 	struct g2d_renderer *gr;
 #ifdef ENABLE_EGL
 	const char *extensions;
+	int ret;
 #endif
 
 	if(g2d_renderer_create(ec) < 0)
@@ -1802,10 +1881,33 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
 	else
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8b8g8r8);
+
+	g2d_renderer_set_egl_device(gr);
+
+	if (gr->drm_device) {
+		/* We support dma-buf feedback only when the renderer
+		 * exposes a DRM-device */
+		ec->dmabuf_feedback_format_table =
+			weston_dmabuf_feedback_format_table_create(&gr->supported_formats);
+		if (!ec->dmabuf_feedback_format_table)
+			goto fail_terminate;
+		ret = create_default_dmabuf_feedback(ec, gr);
+		if (ret < 0)
+			goto fail_feedback;
+	}
 #endif
 	gr->use_drm = 1;
 
 	return 0;
+
+fail_terminate:
+	weston_drm_format_array_fini(&gr->supported_formats);
+	eglTerminate(gr->egl_display);
+fail_feedback:
+	weston_dmabuf_feedback_format_table_destroy(ec->dmabuf_feedback_format_table);
+	ec->dmabuf_feedback_format_table = NULL;
+
+	return -1;
 }
 
 static void
