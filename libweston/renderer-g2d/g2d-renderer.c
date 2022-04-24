@@ -1630,7 +1630,7 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 	struct g2d_buf *g2dBuf = NULL;
 	enum g2d_format g2dFormat;
 	gctUINT32 *paddr = NULL;
-	int i = 0;
+	int i = 0, dmafd = -1;
 	int bpp = 1;
 
 	if (!dmabuf)
@@ -1645,12 +1645,17 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 		return false;
 
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		dmafd = dup(dmabuf->attributes.fd[i]);
+		if (dmafd == -1)
+			goto failed;
+
 		if (g2dBuf)
 			g2d_free(g2dBuf);
-		g2dBuf = g2d_buf_from_fd(dmabuf->attributes.fd[i]);
+		g2dBuf = g2d_buf_from_fd(dmafd);
 		if(!g2dBuf)
-			return false;
+			goto failed;
 		paddr[i] = g2dBuf->buf_paddr;
+		close(dmafd);
 	}
 
 	if(!g2dBuf)
@@ -1661,6 +1666,18 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 	linux_dmabuf_buffer_set_user_data(dmabuf, (void *)paddr, free_paddr_buf);
 
 	return true;
+
+failed:
+	if (paddr)
+		free(paddr);
+
+	if(g2dBuf)
+		g2d_free(g2dBuf);
+
+	if (dmafd != -1)
+		close(dmafd);
+
+	return false;
 }
 
 static void
