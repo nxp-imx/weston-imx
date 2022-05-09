@@ -2000,8 +2000,10 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	if(gr->bind_display)
 		gr->bind_display(gr->egl_display, gr->wl_display);
 	eglTerminate(gr->egl_display);
+#if defined(BUILD_FBDEV_COMPOSITOR)
 	if(!gr->use_drm)
 		fbDestroyDisplay(gr->display);
+#endif
 #endif
 	free(ec->renderer);
 	ec->renderer = NULL;
@@ -2431,6 +2433,7 @@ g2d_renderer_surface_create(struct g2d_output_state *go,
 	return 0;
 }
 
+#if defined(BUILD_FBDEV_COMPOSITOR)
 static int
 g2d_fbdev_renderer_output_create(struct weston_output *output,
 		struct wl_display *wl_display,
@@ -2529,12 +2532,15 @@ g2d_fbdev_renderer_output_create(struct weston_output *output,
 
 	return 0;
  }
+#endif
 
  WL_EXPORT struct g2d_renderer_interface g2d_renderer_interface = {
 	.create = g2d_renderer_create,
 	.drm_display_create  = g2d_drm_display_create,
 	.drm_output_create   = g2d_drm_renderer_output_create,
+#if defined(BUILD_FBDEV_COMPOSITOR)
 	.fbdev_output_create = g2d_fbdev_renderer_output_create,
+#endif
 	.create_g2d_image    = drm_create_g2d_image,
 	.output_set_buffer   = g2d_renderer_output_set_buffer,
 	.output_destroy      = g2d_renderer_output_destroy,
