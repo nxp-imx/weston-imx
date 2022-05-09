@@ -607,6 +607,8 @@ struct drm_output {
 	void (*virtual_destroy)(struct weston_output *base);
 
 	submit_frame_cb virtual_submit_frame;
+
+	int (*surface_get_in_fence_fd)(struct gbm_surface *surface);
 };
 
 void

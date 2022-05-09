@@ -2372,6 +2372,7 @@ drm_output_create(struct weston_compositor *compositor, const char *name)
 	output->gbm_format = DRM_FORMAT_INVALID;
 #ifdef BUILD_DRM_GBM
 	output->gbm_bo_flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+	output->surface_get_in_fence_fd = weston_load_module("/usr/lib/libgbm.so", "gbm_surface_get_in_fence_fd");
 #endif
 
 	weston_output_init(&output->base, compositor, name);
