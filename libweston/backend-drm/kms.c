@@ -953,7 +953,8 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 		 * the buffer_release was not exist or
 		 * the buffer was not used in the output.
 		 */
-		in_fence_fd = gbm_surface_get_in_fence_fd(output->gbm_surface);
+		if (output->surface_get_in_fence_fd)
+			in_fence_fd = output->surface_get_in_fence_fd(output->gbm_surface);
 	}
 #if defined(ENABLE_IMXG2D)
 	else if(b->use_g2d && b->g2d_renderer) {
