@@ -712,6 +712,8 @@ struct drm_output {
 	submit_frame_cb virtual_submit_frame;
 
 	enum wdrm_content_type content_type;
+
+	int (*surface_get_in_fence_fd)(struct gbm_surface *surface);
 };
 
 void

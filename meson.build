@@ -113,6 +113,7 @@ config_h.set_quoted('PACKAGE_BUGREPORT', 'https://gitlab.freedesktop.org/wayland
 
 config_h.set_quoted('BINDIR', dir_bin)
 config_h.set_quoted('DATADIR', dir_data)
+config_h.set_quoted('LIBDIR', dir_lib)
 config_h.set_quoted('LIBEXECDIR', dir_libexec)
 config_h.set_quoted('MODULEDIR', dir_module_weston)
 config_h.set_quoted('LIBWESTON_MODULEDIR', dir_module_libweston)
