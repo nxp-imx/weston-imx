@@ -602,6 +602,8 @@ struct drm_output {
 	bool virtual;
 
 	submit_frame_cb virtual_submit_frame;
+
+	int (*surface_get_in_fence_fd)(struct gbm_surface *surface);
 };
 
 static inline struct drm_head *
