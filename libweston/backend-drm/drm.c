@@ -2652,6 +2652,7 @@ drm_output_create(struct weston_backend *backend, const char *name)
 	output->max_bpc = 16;
 #ifdef BUILD_DRM_GBM
 	output->gbm_bo_flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+	output->surface_get_in_fence_fd = weston_load_module("libgbm.so", "gbm_surface_get_in_fence_fd", LIBDIR);
 #endif
 
 	weston_output_init(&output->base, b->compositor, name);
