@@ -2242,7 +2242,15 @@ static void
 fade_out_done_idle_cb(void *data)
 {
 	struct shell_surface *shsurf = data;
-	desktop_shell_destroy_surface(shsurf);
+
+	weston_surface_destroy(shsurf->view->surface);
+
+	if (shsurf->output_destroy_listener.notify) {
+		wl_list_remove(&shsurf->output_destroy_listener.link);
+		shsurf->output_destroy_listener.notify = NULL;
+	}
+
+	free(shsurf);
 }
 
 static void
