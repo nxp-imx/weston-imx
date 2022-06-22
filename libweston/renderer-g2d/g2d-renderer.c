@@ -37,7 +37,6 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <HAL/gc_hal.h>
 #include <drm_fourcc.h>
 #include <poll.h>
 #include <errno.h>
@@ -65,23 +64,23 @@ typedef EGLBoolean (EGLAPIENTRYP PFNEGLUPDATEWAYLANDBUFFERWL)(EGLDisplay dpy, st
 struct wl_viv_buffer
 {
 	struct wl_resource *resource;
-	gcoSURF  surface;
-	gctINT32 width;
-	gctINT32 height;
-	gctINT32 format;
-	gctUINT alignedWidth;
-	gctUINT alignedHeight;
-	gctUINT32 physical[3];
-	gctUINT32 gpuBaseAddr;
-	gceTILING tiling;
-	gctINT32 fd;
+	void *surface;
+	signed int width;
+	signed int height;
+	enum g2d_format format;
+	unsigned int alignedWidth;
+	unsigned int alignedHeight;
+	unsigned int physical[3];
+	unsigned int gpuBaseAddr;
+	enum g2d_tiling tiling;
+	signed int fd;
 
-	gctUINT32 ts_addr;
-	gctUINT32 fc_enabled;
-	gctUINT32 fcValue;
-	gctUINT32 fcValueUpper;
-	gctUINT32 compressed;
-	gctUINT32 tileStatus_enabled;
+	unsigned int ts_addr;
+	unsigned int fc_enabled;
+	unsigned int fcValue;
+	unsigned int fcValueUpper;
+	unsigned int compressed;
+	unsigned int tileStatus_enabled;
 };
 
 typedef struct _g2dRECT
@@ -316,99 +315,8 @@ get_output_state(struct weston_output *output)
 	return (struct g2d_output_state *)output->renderer_state;
 }
 
-static void
-g2d_getG2dTiling(IN gceTILING tiling, enum g2d_tiling* g2dTiling)
-{
-	switch(tiling)
-	{
-	case gcvLINEAR:
-		*g2dTiling = G2D_LINEAR;
-		break;
-	case gcvTILED:
-		*g2dTiling = G2D_TILED;
-		break;
-	case gcvSUPERTILED:
-		*g2dTiling = G2D_SUPERTILED;
-		break;
-	default:
-		weston_log("Error in function %s\n", __func__);
-		break;
-	}
-}
-
-static void
-g2d_getG2dFormat(IN gceSURF_FORMAT Format, enum g2d_format* g2dFormat)
-{
-	switch(Format)
-	{
-	case gcvSURF_R5G6B5:
-		*g2dFormat = G2D_RGB565;
-		break;
-	case gcvSURF_A8B8G8R8:
-		*g2dFormat = G2D_RGBA8888;
-		break;
-	case gcvSURF_X8B8G8R8:
-		*g2dFormat = G2D_RGBA8888;
-		break;
-	case gcvSURF_A8R8G8B8:
-		*g2dFormat = G2D_BGRA8888;
-		break;
-	case gcvSURF_X8R8G8B8:
-		*g2dFormat = G2D_BGRX8888;
-		break;
-	case gcvSURF_B5G6R5:
-		*g2dFormat = G2D_BGR565;
-		break;
-	case gcvSURF_B8G8R8A8:
-		*g2dFormat = G2D_ARGB8888;
-		break;
-	case gcvSURF_R8G8B8A8:
-		*g2dFormat = G2D_ABGR8888;
-		break;
-	case gcvSURF_B8G8R8X8:
-		*g2dFormat = G2D_XRGB8888;
-		break;
-	case gcvSURF_R8G8B8X8:
-		*g2dFormat = G2D_XBGR8888;
-		break;
-	case gcvSURF_NV12:
-		*g2dFormat = G2D_NV12;
-		break;
-	case gcvSURF_NV21:
-		*g2dFormat = G2D_NV21;
-		break;
-	case gcvSURF_I420:
-		*g2dFormat = G2D_I420;
-		break;
-	case gcvSURF_YV12:
-		*g2dFormat = G2D_YV12;
-		break;
-	case gcvSURF_YUY2:
-		*g2dFormat = G2D_YUYV;
-		break;
-	case gcvSURF_YVYU:
-		*g2dFormat = G2D_YVYU;
-		break;
-	case gcvSURF_UYVY:
-		*g2dFormat = G2D_UYVY;
-		break;
-	case gcvSURF_VYUY:
-		*g2dFormat = G2D_VYUY;
-		break;
-	case gcvSURF_NV16:
-		*g2dFormat = G2D_NV16;
-		break;
-	case gcvSURF_NV61:
-		*g2dFormat = G2D_NV61;
-		break;
-	default:
-		weston_log("Error in function %s, Format not supported\n", __func__);
-		break;
-	}
-}
-
 static int
-g2d_getG2dFormat_from_pixman(IN pixman_format_code_t Format, enum g2d_format* g2dFormat)
+g2d_getG2dFormat_from_pixman(pixman_format_code_t Format, enum g2d_format* g2dFormat)
 {
 	switch(Format)
 	{
@@ -477,8 +385,8 @@ get_g2dSurface(struct wl_viv_buffer *buffer, struct g2d_surfaceEx *g2dSurface)
 		weston_log("invalid EGL buffer in function %s\n", __func__);
 		return -EINVAL;
 	}
-	g2d_getG2dFormat(buffer->format, &g2dSurface->base.format);
-	g2d_getG2dTiling(buffer->tiling, &g2dSurface->tiling);
+	g2dSurface->base.format = buffer->format;
+	g2dSurface->tiling = buffer->tiling;
 	g2dSurface->base.planes[0] = buffer->physical[0] + buffer->gpuBaseAddr;
 	g2dSurface->base.planes[1] = buffer->physical[1] + buffer->gpuBaseAddr;
 	g2dSurface->base.planes[2] = buffer->physical[2] + buffer->gpuBaseAddr;
@@ -963,12 +871,12 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 	for (i = 0; i < nrects; i++)
 	{
 		pixman_box32_t *rect = &rects[i];
-		gctFLOAT min_x, max_x, min_y, max_y;
+		float min_x, max_x, min_y, max_y;
 
 		for (j = 0; j < nsurf; j++)
 		{
 			pixman_box32_t *surf_rect = &surf_rects[j];
-			gctFLOAT ex[8], ey[8];			/* edge points in screen space */
+			float ex[8], ey[8];			/* edge points in screen space */
 			int n;
 			int m=0;
 			n = calculate_edges(ev, rect, surf_rect, ex, ey);
@@ -1560,7 +1468,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	struct g2d_surface_state *gs = get_surface_state(es);
 	int alignedWidth = 0, alignedHeight = 0;
 	enum g2d_format g2dFormat;
-	gctUINT32 *paddr;
+	unsigned int *paddr;
 	int i = 0;
 	int bpp = 1;
 	buffer->width = dmabuf->attributes.width;
@@ -1577,7 +1485,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if (g2dFormat < 0)
 		return;
 
-	paddr = (gctUINT32 *)linux_dmabuf_buffer_get_user_data(dmabuf);
+	paddr = (unsigned int *)linux_dmabuf_buffer_get_user_data(dmabuf);
 	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
 		gs->g2d_surface.base.planes[i] = paddr[i] + dmabuf->attributes.offset[i];
 	}
@@ -1637,7 +1545,7 @@ g2d_renderer_query_dmabuf_modifiers(struct weston_compositor *wc, int format,
 static void
 free_paddr_buf (struct linux_dmabuf_buffer *buffer)
 {
-	gctUINT32 * paddr = (gctUINT32 *)buffer->user_data;
+	unsigned int * paddr = (unsigned int *)buffer->user_data;
 	if (paddr)
 		free (paddr);
 }
@@ -1648,7 +1556,7 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 {
 	struct g2d_buf *g2dBuf = NULL;
 	enum g2d_format g2dFormat;
-	gctUINT32 *paddr = NULL;
+	unsigned int *paddr = NULL;
 	int i = 0, dmafd = -1;
 	int bpp = 1;
 
@@ -1659,7 +1567,7 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 	if (g2dFormat < 0)
 		return false;
 
-	paddr = malloc (sizeof (gctUINT32) * dmabuf->attributes.n_planes);
+	paddr = malloc (sizeof (unsigned int) * dmabuf->attributes.n_planes);
 	if (!paddr)
 		return false;
 
@@ -2380,7 +2288,7 @@ getBufferNumber(struct g2d_output_state *go)
 {
 	char *p = NULL;
 	p = getenv("FB_MULTI_BUFFER");
-	if (p == gcvNULL)
+	if (p == NULL)
 	{
 		go->nNumBuffers = BUFFER_DAMAGE_COUNT;
 	}
