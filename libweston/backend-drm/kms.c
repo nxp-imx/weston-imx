@@ -1047,6 +1047,28 @@ get_drm_protection_from_weston(enum weston_hdcp_protection weston_protection,
 	}
 }
 
+static int
+drm_protection_from_weston_update(enum weston_hdcp_protection protection)
+{
+	enum weston_hdcp_protection current_protection;
+	static enum weston_hdcp_protection op_protection;
+	static bool op_protection_valid = false;
+
+	current_protection = protection;
+
+	if (!op_protection_valid) {
+		op_protection = current_protection;
+		op_protection_valid = true;
+	}
+
+	if (current_protection != op_protection) {
+		op_protection = current_protection;
+		return 1;
+	}
+
+	return 0;
+}
+
 static void
 drm_connector_set_hdcp_property(struct drm_connector *connector,
 				enum weston_hdcp_protection protection,
@@ -1159,6 +1181,7 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 		drm_output_get_writeback_state(output);
 	int ret = 0;
 	int in_fence_fd = -1;
+	int update = 0;
 
 	if(output->gbm_surface) {
 		/* in_fence_fd was not created when
@@ -1252,8 +1275,16 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 	}
 
 	wl_list_for_each(head, &output->base.head_list, base.output_link) {
-		drm_connector_set_hdcp_property(&head->connector,
-						state->protection, req);
+		update = drm_protection_from_weston_update(state->protection);
+		if(update) {
+			drm_connector_set_hdcp_property(&head->connector,
+							state->protection, req);
+			/* checking if the output driver this head */
+			if (head->base.output == &output->base) {
+				*flags |= DRM_MODE_ATOMIC_ALLOW_MODESET;
+			}
+		}
+
 		ret |= drm_connector_set_content_type(&head->connector,
 						      output->content_type, req);
 
