@@ -137,6 +137,10 @@ struct g2d_renderer {
 
 	PFNEGLQUERYDISPLAYATTRIBEXTPROC query_display_attrib;
 	PFNEGLQUERYDEVICESTRINGEXTPROC query_device_string;
+
+	bool has_dmabuf_import_modifiers;
+	PFNEGLQUERYDMABUFFORMATSEXTPROC query_dmabuf_formats;
+	PFNEGLQUERYDMABUFMODIFIERSEXTPROC query_dmabuf_modifiers;
 #endif
 	void *handle;
 	int use_drm;
@@ -1348,7 +1352,8 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
-	if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED) {
+	if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED ||
+	   dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SPLIT_SUPER_TILED) {
 		alignedWidth  = ALIGN_TO_64(buffer->width);
 		alignedHeight = ALIGN_TO_64(buffer->height);
 	} else {
@@ -1375,7 +1380,8 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if (dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_AMPHION_TILED) {
 		gs->g2d_surface.base.stride = dmabuf->attributes.stride[0];
 		gs->g2d_surface.tiling = G2D_AMPHION_TILED;
-	} else if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED){
+	} else if(dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED ||
+		      dmabuf->attributes.modifier[0] == DRM_FORMAT_MOD_VIVANTE_SPLIT_SUPER_TILED){
 		gs->g2d_surface.base.stride = alignedWidth;
 		gs->g2d_surface.tiling = G2D_SUPERTILED;
 	} else {
@@ -1412,9 +1418,41 @@ g2d_renderer_query_dmabuf_modifiers(struct weston_compositor *wc, int format,
 			uint64_t **modifiers,
 			int *num_modifiers)
 {
-	*num_modifiers = 1;
-	*modifiers = calloc(*num_modifiers, sizeof(uint64_t));
-	(*modifiers)[0] = DRM_FORMAT_MOD_LINEAR;
+	struct g2d_renderer *gr = get_renderer(wc);
+	int num;
+
+	/*
+	 * Set modifiers with DRM_FORMAT_MOD_LINEAR as default,
+	 * if not support eglQueryDmaBufModifiersEXT.
+	 */
+	if (!gr->has_dmabuf_import_modifiers) {
+		*num_modifiers = 1;
+		*modifiers = calloc(*num_modifiers, sizeof(uint64_t));
+		(*modifiers)[0] = DRM_FORMAT_MOD_LINEAR;
+		return;
+	}
+
+	if (!gr->query_dmabuf_modifiers(gr->egl_display, format, 0, NULL,
+					    NULL, &num) ||
+		num == 0) {
+		*num_modifiers = 0;
+		return;
+	}
+
+	*modifiers = calloc(num, sizeof(uint64_t));
+	if (*modifiers == NULL) {
+		*num_modifiers = 0;
+		return;
+	}
+
+	if (!gr->query_dmabuf_modifiers(gr->egl_display, format,
+				num, *modifiers, NULL, &num)) {
+		*num_modifiers = 0;
+		free(*modifiers);
+		return;
+	}
+
+	*num_modifiers = num;
 }
 
 static void
@@ -1792,7 +1830,7 @@ static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
-	int ret;
+
 	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
 		return -1;
@@ -1828,10 +1866,6 @@ g2d_renderer_create(struct weston_compositor *ec)
 				"eglGetPlatformDisplayEXT");
 	}
 
-	ret = populate_supported_formats(ec, &gr->supported_formats);
-	if (ret < 0)
-		goto fail_terminate;
-
 	ec->capabilities |= WESTON_CAP_EXPLICIT_SYNC;
 #endif
 	if(g2d_open(&gr->handle))
@@ -1854,11 +1888,6 @@ g2d_renderer_create(struct weston_compositor *ec)
 	create_g2d_file();
 
 	return 0;
-
-fail_terminate:
-	weston_drm_format_array_fini(&gr->supported_formats);
-
-	return -1;
 }
 
 static int
@@ -1899,6 +1928,21 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8b8g8r8);
 
 	g2d_renderer_set_egl_device(gr);
+
+	if (weston_check_egl_extension(extensions,
+				"EGL_EXT_image_dma_buf_import_modifiers")) {
+		gr->query_dmabuf_formats =
+			(void *) eglGetProcAddress("eglQueryDmaBufFormatsEXT");
+		gr->query_dmabuf_modifiers =
+			(void *) eglGetProcAddress("eglQueryDmaBufModifiersEXT");
+		assert(gr->query_dmabuf_formats);
+		assert(gr->query_dmabuf_modifiers);
+		gr->has_dmabuf_import_modifiers = true;
+	}
+
+	ret = populate_supported_formats(ec, &gr->supported_formats);
+	if (ret < 0)
+		goto fail_terminate;
 
 	if (gr->drm_device) {
 		/* We support dma-buf feedback only when the renderer
