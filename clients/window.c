@@ -3788,8 +3788,6 @@ input_set_pointer_image_index(struct input *input, int index)
 	struct wl_buffer *buffer;
 	struct wl_cursor *cursor;
 	struct wl_cursor_image *image;
-	struct wl_surface *prev_surface;
-	struct display *d = input->display;
 
 	if (!input->pointer)
 		return;
@@ -3808,11 +3806,6 @@ input_set_pointer_image_index(struct input *input, int index)
 	if (!buffer)
 		return;
 
-	/* Don't re-use the previous surface, otherwise the new buffer and the
-	 * new hotspot aren't applied atomically. */
-	prev_surface = input->pointer_surface;
-	input->pointer_surface = wl_compositor_create_surface(d->compositor);
-
 	wl_surface_attach(input->pointer_surface, buffer, 0, 0);
 	wl_surface_damage(input->pointer_surface, 0, 0,
 			  image->width, image->height);
@@ -3820,9 +3813,6 @@ input_set_pointer_image_index(struct input *input, int index)
 	wl_pointer_set_cursor(input->pointer, input->pointer_enter_serial,
 			      input->pointer_surface,
 			      image->hotspot_x, image->hotspot_y);
-
-	if (prev_surface)
-		wl_surface_destroy(prev_surface);
 }
 
 static const struct wl_callback_listener pointer_surface_listener;
@@ -3927,11 +3917,11 @@ pointer_surface_frame_callback(void *data, struct wl_callback *callback,
 					time - input->cursor_anim_start,
 					&duration);
 
-	input_set_pointer_image_index(input, i);
-
 	if (cursor->image_count > 1)
 		schedule_pointer_image_update(input, cursor, duration,
 					      force_frame);
+
+	input_set_pointer_image_index(input, i);
 }
 
 static void
@@ -5932,6 +5922,8 @@ display_add_input(struct display *d, uint32_t id, int display_seat_version)
 					    input);
 	}
 
+	input->pointer_surface = wl_compositor_create_surface(d->compositor);
+
 	toytimer_init(&input->cursor_timer, CLOCK_MONOTONIC, d,
 		      cursor_timer_func);
 
@@ -5999,8 +5991,7 @@ input_destroy(struct input *input)
 
 	fini_xkb(input);
 
-	if (input->pointer_surface)
-		wl_surface_destroy(input->pointer_surface);
+	wl_surface_destroy(input->pointer_surface);
 
 	wl_list_remove(&input->link);
 	wl_seat_destroy(input->seat);
