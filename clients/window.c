@@ -2778,6 +2778,15 @@ pointer_handle_enter(void *data, struct wl_pointer *pointer,
 	input->display->serial = serial;
 	input->pointer_enter_serial = serial;
 	input->pointer_focus = window;
+
+	/* Some compositors advertise wl_seat before wl_compositor. This
+	 * makes it potentially impossible to create the pointer surface
+	 * when we bind the seat, so we need to create our pointer surface
+	 * now instead.
+	 */
+	if (!input->pointer_surface)
+		input->pointer_surface = wl_compositor_create_surface(input->display->compositor);
+
 	input->pointer_surface_has_role = false;
 
 	input->sx = sx;
@@ -5940,7 +5949,6 @@ display_add_input(struct display *d, uint32_t id, int display_seat_version)
 					    input);
 	}
 
-	input->pointer_surface = wl_compositor_create_surface(d->compositor);
 	input->pointer_surface_has_role = false;
 
 	toytimer_init(&input->cursor_timer, CLOCK_MONOTONIC, d,
@@ -6010,7 +6018,8 @@ input_destroy(struct input *input)
 
 	fini_xkb(input);
 
-	wl_surface_destroy(input->pointer_surface);
+	if (input->pointer_surface)
+		wl_surface_destroy(input->pointer_surface);
 
 	wl_list_remove(&input->link);
 	wl_seat_destroy(input->seat);
