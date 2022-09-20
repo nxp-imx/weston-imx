@@ -1807,26 +1807,16 @@ g2d_renderer_surface_set_color(struct weston_surface *surface,
 
 /* create use-g2d-renderer */
 static void
-create_g2d_file(struct weston_output *output)
+create_g2d_file()
 {
 	char *dir, *path;
-	FILE *fp = NULL;
+	mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
 	dir = getenv("XDG_RUNTIME_DIR");
 	path = malloc(strlen(dir) + 40);
 	strcpy(path, dir);
 	strcat(path, "/use-g2d-renderer");
-
-	fp = fopen(path, "w");
-	if(fp) {
-		weston_log("Create File %s\n", path);
-
-		if(output->transform == WL_OUTPUT_TRANSFORM_90
-			|| output->transform == WL_OUTPUT_TRANSFORM_270) {
-			fprintf(fp, "transform=1\n");
-		}
-		fclose(fp);
-	}
+	close(open(path, O_CREAT | O_RDWR, mode));
 	free(path);
 }
 
@@ -1892,8 +1882,6 @@ g2d_renderer_output_destroy(struct weston_output *output)
 
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
 
-	remove_g2d_file();
-
 	free(go);
 }
 
@@ -1917,6 +1905,7 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	ec->renderer = NULL;
 
 	weston_drm_format_array_fini(&gr->supported_formats);
+	remove_g2d_file();
 }
 
 static void
@@ -2048,6 +2037,8 @@ g2d_renderer_create(struct weston_compositor *ec)
 
 	wl_signal_init(&gr->destroy_signal);
 
+	create_g2d_file();
+
 	return 0;
 
 fail_terminate:
@@ -2132,8 +2123,6 @@ g2d_drm_renderer_output_create(struct weston_output *output)
 
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
 		pixman_region32_init(&go->buffer_damage[i]);
-
-	create_g2d_file(output);
 
 	return 0;
  }
