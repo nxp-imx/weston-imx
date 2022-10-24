@@ -1918,7 +1918,9 @@ g2d_renderer_output_destroy(struct weston_output *output)
 		go->mirror_fb_info = NULL;
 	}
 
+#if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
+#endif
 
 	free(go);
 }
