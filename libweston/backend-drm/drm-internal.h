@@ -1035,6 +1035,9 @@ drm_output_fini_vulkan(struct drm_output *output);
 struct drm_fb *
 drm_output_render_vulkan(struct drm_output_state *state, pixman_region32_t *damage);
 
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb);
+
 #else
 inline static int
 init_egl(struct drm_backend *b)
