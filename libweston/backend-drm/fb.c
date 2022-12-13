@@ -73,6 +73,7 @@ drm_fb_addfb(struct drm_device *device, struct drm_fb *fb)
 {
 	int ret = -EINVAL;
 	uint64_t mods[4] = { };
+	int width, height;
 	size_t i;
 
 	/* If we have a modifier set, we must only use the WithModifiers
@@ -82,7 +83,17 @@ drm_fb_addfb(struct drm_device *device, struct drm_fb *fb)
 		 * for all planes. */
 		for (i = 0; i < ARRAY_LENGTH(mods) && fb->handles[i]; i++)
 			mods[i] = fb->modifier;
-		ret = drmModeAddFB2WithModifiers(fb->fd, fb->width, fb->height,
+		if (fb->modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
+			width = ALIGNTO (fb->width, 8);
+			height = ALIGNTO (fb->height, 256);
+		}else if(fb->modifier ==DRM_FORMAT_MOD_VIVANTE_SUPER_TILED){
+			width = ALIGNTO (fb->width, 64);
+			height = ALIGNTO (fb->height, 64);
+		} else {
+			width = fb->width;
+			height = fb->height;
+		}
+		ret = drmModeAddFB2WithModifiers(fb->fd, width, height,
 						 fb->format->format,
 						 fb->handles, fb->strides,
 						 fb->offsets, mods, &fb->fb_id,
@@ -216,6 +227,26 @@ drm_fb_destroy_dmabuf(struct drm_fb *fb)
 	drm_fb_destroy(fb);
 }
 
+#ifdef HAVE_GBM_MODIFIERS
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb)
+{
+	int gbm_aligned = 64;
+
+	if (fb){
+		switch(fb->modifier) {
+			case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED_FC:
+			case DRM_FORMAT_MOD_VIVANTE_SUPER_TILED:
+				gbm_aligned = 64;
+			break;
+			default:
+				gbm_aligned = 1;
+			break;
+		}
+	}
+	return gbm_aligned;
+}
+#endif
 static void
 drm_close_gem_handle(struct linux_dmabuf_buffer *dmabuf)
 {

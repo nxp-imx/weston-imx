@@ -388,11 +388,27 @@ drm_output_render(struct drm_output_state *state, pixman_region32_t *damage)
 	 * area. But, we still have to call the renderer anyway if any screen
 	 * capture is pending, otherwise the capture will not complete.
 	 */
+
+#ifdef HAVE_GBM_MODIFIERS
+	int gbm_aligned = drm_fb_get_gbm_alignment (scanout_plane->state_cur->fb);
+#endif
+
 	if (!pixman_region32_not_empty(damage) &&
 	    wl_list_empty(&output->base.frame_signal.listener_list) &&
 	    scanout_plane->state_cur->fb &&
 	    (scanout_plane->state_cur->fb->type == BUFFER_GBM_SURFACE ||
-	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB)) {
+	     scanout_plane->state_cur->fb->type == BUFFER_PIXMAN_DUMB) &&
+#ifdef HAVE_GBM_MODIFIERS
+	    scanout_plane->state_cur->fb->width ==
+		ALIGNTO(output->base.current_mode->width, gbm_aligned) &&
+	    scanout_plane->state_cur->fb->height ==
+		ALIGNTO(output->base.current_mode->height, gbm_aligned)) {
+#else
+	    scanout_plane->state_cur->fb->width ==
+		output->base.current_mode->width &&
+	    scanout_plane->state_cur->fb->height ==
+		output->base.current_mode->height) {
+#endif
 		fb = drm_fb_ref(scanout_plane->state_cur->fb);
 	} else if (b->use_pixman) {
 		fb = drm_output_render_pixman(state, damage);
