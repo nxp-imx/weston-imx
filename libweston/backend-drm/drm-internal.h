@@ -1035,6 +1035,9 @@ struct drm_fb *
 drm_output_render_g2d(struct drm_output_state *state, pixman_region32_t *damage);
 #endif
 
+int
+drm_fb_get_gbm_alignment(struct drm_fb *fb);
+
 #else
 inline static int
 init_egl(struct drm_backend *b)
