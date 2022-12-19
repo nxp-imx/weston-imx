@@ -328,6 +328,7 @@ struct drm_backend {
 #endif
 	bool use_pixman_shadow;
 
+	bool enable_overlay_view;
 	uint32_t shell_width;
 	uint32_t shell_height;
 
