@@ -740,10 +740,13 @@ drm_fb_get_from_paint_node(struct drm_output_state *state,
 		if (!fb)
 			goto unsuitable;
 	} else if (buffer->type == WESTON_BUFFER_RENDERER_OPAQUE) {
-		struct gbm_bo *bo;
+		struct gbm_bo *bo = NULL;
 
-		bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
-				   buffer->resource, GBM_BO_USE_SCANOUT);
+		if(b->enable_overlay_view)
+		{
+			bo = gbm_bo_import(b->gbm, GBM_BO_IMPORT_WL_BUFFER,
+					   buffer->resource, GBM_BO_USE_SCANOUT);
+		}
 		if (!bo)
 			goto unsuitable;
 

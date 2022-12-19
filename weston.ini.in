@@ -4,6 +4,7 @@ idle-time=0
 #use-g2d=true
 xwayland=true
 #repaint-window=16
+#enable-overlay-view=1
 modules=screen-share.so
 
 #[shell]
