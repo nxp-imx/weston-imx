@@ -209,6 +209,8 @@ struct weston_drm_backend_config {
 	bool use_g2d;
 #endif
 
+	bool enable_overlay_view;
+
 	/** The seat to be used for input and output.
 	 *
 	 * If seat_id is NULL, the seat is taken from XDG_SEAT environment
