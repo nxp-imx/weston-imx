@@ -3528,6 +3528,16 @@ drm_destroy(struct weston_backend *backend)
 
 	hash_table_destroy(device->gem_handle_refcnt);
 
+	if(b->enable_overlay_view){
+		/* remove enable-overlay-view */
+		char *dir, *path;
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		remove(path);
+		free(path);
+	}
 	free(device->drm.filename);
 	free(device);
 	free(b);
@@ -4043,6 +4053,7 @@ drm_backend_create(struct weston_compositor *compositor,
 #if defined(ENABLE_IMXG2D)
 	b->use_g2d = config->use_g2d;
 #endif
+	b->enable_overlay_view = config->enable_overlay_view;
 	b->shell_width = config->shell_width;
 	b->shell_height = config->shell_height;
 	b->pageflip_timeout = config->pageflip_timeout;
@@ -4262,6 +4273,19 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_udev_monitor;
 	}
 
+	if(b->enable_overlay_view){
+		/* create enable-overlay-view*/
+		char *dir, *path;
+		mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+
+		dir = getenv("XDG_RUNTIME_DIR");
+		path = malloc(strlen(dir) + 40);
+		strcpy(path, dir);
+		strcat(path, "/enable-overlay-view");
+		close(open(path, O_CREAT | O_RDWR, mode));
+		free(path);
+	}
+
 	return b;
 
 err_udev_monitor:
@@ -4309,6 +4333,7 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 #endif
 	config->shell_width = 0;
 	config->shell_height = 0;
+	config->enable_overlay_view = 0;
 }
 
 WL_EXPORT int
