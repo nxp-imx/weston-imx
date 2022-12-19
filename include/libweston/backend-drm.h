@@ -204,6 +204,8 @@ struct weston_drm_backend_config {
 	/** Select the renderer type to use */
 	enum weston_renderer_type renderer;
 
+	bool enable_overlay_view;
+
 	/** The seat to be used for input and output.
 	 *
 	 * If seat_id is NULL, the seat is taken from XDG_SEAT environment

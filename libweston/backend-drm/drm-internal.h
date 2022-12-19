@@ -260,6 +260,7 @@ struct drm_backend {
 
 	bool offload_blend_to_output;
 
+	bool enable_overlay_view;
 	uint32_t shell_width;
 	uint32_t shell_height;
 
