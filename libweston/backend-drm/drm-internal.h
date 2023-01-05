@@ -591,6 +591,7 @@ struct drm_output {
 	pixman_image_t *image[3];
 #if defined(ENABLE_IMXGPU) && defined(ENABLE_IMXG2D)
 	struct g2d_surfaceEx g2d_image[3];
+	int dumb_dmafd[3];
 #endif
 	int current_image;
 	pixman_region32_t previous_damage;
