@@ -473,10 +473,8 @@ static const struct pixel_format_info pixel_format_table[] = {
 	{
 #if USE_DRM_FORMAT_NV15
 		DRM_FORMAT(NV15),
-		.format = DRM_FORMAT_NV15,
 #else
 		DRM_FORMAT(NV12_10LE40),
-		.format = DRM_FORMAT_NV12_10LE40,
 #endif
 		.num_planes = 2,
 		.hsub = 2,
