@@ -150,17 +150,13 @@ dep_libm = cc.find_library('m')
 dep_libdl = cc.find_library('dl')
 dep_libdrm = dependency('libdrm', version: '>= 2.4.108')
 dep_libdrm_headers = dep_libdrm.partial_dependency(compile_args: true)
-dep_libdrm_107 = dependency('libdrm', version: '>= 2.4.107', required:false)
 dep_threads = dependency('threads')
 
 dep_lcms2 = dependency('lcms2', version: '>= 2.9', required: false)
 
-drm_cflags = []
 dep_libdrm_version = dep_libdrm.version()
 if dep_libdrm_version.version_compare('>=2.4.107')
-  message('Found libdrm with human format modifier support.')
-  config_h.set('HAVE_HUMAN_FORMAT_MODIFIER', '1')
-  drm_cflags = ['-DUSE_DRM_FORMAT_NV15']
+  config_h.set('USE_DRM_FORMAT_NV15', '1')
 endif
 
 prog_python = import('python').find_installation('python3')
