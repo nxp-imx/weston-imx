@@ -698,6 +698,7 @@ struct drm_output {
 	struct weston_renderbuffer *renderbuffer[2];
 #if defined(ENABLE_IMXG2D)
 	struct g2d_surfaceEx g2d_image[2];
+	int dumb_dmafd[2];
 #endif
 	int current_image;
 	pixman_region32_t previous_damage;
