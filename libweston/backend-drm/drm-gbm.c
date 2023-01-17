@@ -376,13 +376,13 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		struct g2d_surfaceEx* g2dSurface = &(output->g2d_image[i]);
-		int ret, dmafd = 0;
+		int ret;
 		output->dumb[i] = drm_fb_create_dumb(device, w, h, format);
 		if (!output->dumb[i])
 			goto err;
 
 		ret = drmPrimeHandleToFD(device->drm.fd, output->dumb[i]->handles[0], DRM_CLOEXEC,
-				       &dmafd);
+				       &output->dumb_dmafd[i]);
 		if(ret < 0)
 			goto err;
 
@@ -391,7 +391,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 						w, h,
 						output->dumb[i]->strides[0],
 						output->dumb[i]->size,
-						dmafd);
+						output->dumb_dmafd[i]);
 		if (ret < 0)
 			goto err;
 	}
@@ -426,6 +426,7 @@ drm_output_fini_g2d(struct drm_output *output)
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		drm_fb_unref(output->dumb[i]);
 		output->dumb[i] = NULL;
+		close(output->dumb_dmafd[i]);
 	}
 	b->g2d_renderer->output_destroy(&output->base);
 }
