@@ -1099,7 +1099,7 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_IN_FENCE_FD,
 					      plane_state->in_fence_fd);
-		} else if (in_fence_fd >= 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY) {
+		} else if (in_fence_fd >= 0 && plane->type == WDRM_PLANE_TYPE_PRIMARY && plane_state->fb) {
 			ret |= plane_add_prop(req, plane,
 					      WDRM_PLANE_IN_FENCE_FD,
 					      in_fence_fd);
