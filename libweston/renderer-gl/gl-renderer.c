@@ -4966,6 +4966,10 @@ gl_renderer_display_create(struct weston_compositor *ec,
 		if (info->hide_from_clients)
 			continue;
 
+		/* JPEG decode only support packed YUV444 */
+		if (info->format == WL_SHM_FORMAT_YUV444)
+			continue;
+
 		if (info->gl.internal == 0 ||
 		    !gl_texture_is_format_supported(gr, info->gl.internal))
 			continue;
