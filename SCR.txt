@@ -1,0 +1,9 @@
+Package:                     weston-imx.git
+Version:                     14.0.1.imx
+Outgoing License:            MIT
+License File:                COPYING
+Type of Content:             source
+Description and comments:    A reference implementation of a Wayland compositor
+Release Location:            https://github.com/nxp-imx/weston-imx -b lf-6.6.36-1.0.0
+Origin:                      NXP (MIT)
+                             Weston (MIT) - http://github.com/wayland-project/weston/
