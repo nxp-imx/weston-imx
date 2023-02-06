@@ -640,6 +640,10 @@ repaint_region(struct weston_view *ev, struct weston_output *output, struct g2d_
 		return;
 	}
 
+	if (srcsurface.base.width <= 0 || srcsurface.base.height <= 0) {
+		return;
+	}
+
 	bb_rects = pixman_region32_rectangles(&ev->transform.boundingbox, &nbb);
 
 	if(!gs->attached || nbb <= 0)
