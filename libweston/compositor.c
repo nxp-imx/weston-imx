@@ -1827,6 +1827,7 @@ transform_parent_handle_parent_destroy(struct wl_listener *listener,
 			     geometry.parent_destroy_listener);
 
 	weston_view_set_transform_parent(view, NULL);
+	view->parent_view = NULL;
 }
 
 WL_EXPORT void
