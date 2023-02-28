@@ -519,6 +519,9 @@ struct drm_head {
 	drmModeModeInfo inherited_mode;	/**< Original mode on the connector */
 	uint32_t inherited_max_bpc;	/**< Original max_bpc on the connector */
 	uint32_t inherited_crtc_id;	/**< Original CRTC assignment */
+
+	/* drm_output::disable_head */
+	struct wl_list disable_head_link;
 };
 
 struct drm_crtc {
@@ -540,6 +543,9 @@ struct drm_output {
 	struct weston_output base;
 	struct drm_device *device;
 	struct drm_crtc *crtc;
+
+	/* drm_head::disable_head_link */
+	struct wl_list disable_head;
 
 	bool page_flip_pending;
 	bool atomic_complete_pending;
