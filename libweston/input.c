@@ -3655,6 +3655,8 @@ enable_pointer_constraint(struct weston_pointer_constraint *constraint,
 	constraint->view = view;
 	pointer_constraint_notify_activated(constraint);
 	weston_pointer_start_grab(constraint->pointer, &constraint->grab);
+	wl_signal_add(&constraint->view->unmap_signal,
+		      &constraint->view_unmap_listener);
 }
 
 static bool
@@ -3669,6 +3671,8 @@ weston_pointer_constraint_disable(struct weston_pointer_constraint *constraint)
 	constraint->view = NULL;
 	pointer_constraint_notify_deactivated(constraint);
 	weston_pointer_end_grab(constraint->grab.pointer);
+	wl_list_remove(&constraint->view_unmap_listener.link);
+	wl_list_init(&constraint->view_unmap_listener.link);
 }
 
 void
@@ -3874,6 +3878,16 @@ pointer_constraint_pointer_destroyed(struct wl_listener *listener, void *data)
 }
 
 static void
+pointer_constraint_view_unmapped(struct wl_listener *listener, void *data)
+{
+        struct weston_pointer_constraint *constraint =
+                container_of(listener, struct weston_pointer_constraint,
+                             view_unmap_listener);
+
+        disable_pointer_constraint(constraint);
+}
+
+static void
 pointer_constraint_surface_committed(struct wl_listener *listener, void *data)
 {
 	struct weston_pointer_constraint *constraint =
@@ -3934,6 +3948,8 @@ weston_pointer_constraint_create(struct weston_surface *surface,
 
 	constraint->surface_activate_listener.notify =
 		pointer_constraint_surface_activate;
+	constraint->view_unmap_listener.notify =
+		pointer_constraint_view_unmapped;
 	constraint->surface_commit_listener.notify =
 		pointer_constraint_surface_committed;
 	constraint->pointer_destroy_listener.notify =
