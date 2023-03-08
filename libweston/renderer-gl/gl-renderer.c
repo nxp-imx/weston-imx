@@ -2958,6 +2958,7 @@ gl_renderer_attach_dmabuf(struct weston_surface *surface,
 		struct weston_compositor *compositor = surface->compositor;
 		struct weston_backend *backend = surface->compositor->backend;
 		if (backend->import_dmabuf(compositor, dmabuf)){
+			attach_direct_display_censor_placeholder(surface, buffer);
 			buffer->width = dmabuf->attributes.width;
 			buffer->height = dmabuf->attributes.height;
 			return true;
