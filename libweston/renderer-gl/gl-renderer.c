@@ -1164,6 +1164,58 @@ gl_shader_config_init_for_paint_node(struct gl_shader_config *sconf,
 }
 
 static void
+draw_through_hole(struct weston_paint_node *pnode,
+		pixman_region32_t *output_region /* in global coordinates */)
+{
+	struct gl_renderer *gr = get_renderer(pnode->surface->compositor);
+	struct gl_output_state *go = get_output_state(pnode->output);
+
+	/* repaint bounding region in global coordinates: */
+	pixman_region32_t repaint;
+	/* through hole region in surface coordinates: */
+	pixman_region32_t surface_hole;
+
+	/* set shader conf for through hole */
+	struct gl_shader_config sconf = {
+		.req = {
+			/* set to SOLID, shader will draw a solid color region */
+			.variant = SHADER_VARIANT_SOLID,
+			.input_is_premult = true,
+		},
+		.projection = go->output_matrix,
+		/* through hole need to be a colorless opaque region */
+		.view_alpha = 1.0,
+		.unicolor = { 0.0, 0.0, 0.0, 0.0 },
+		/* Not necessary, beacuse for solid surface,
+		 * shader will use unicolor not textture */
+		.input_tex = {0, 0, 0}
+	};
+
+	/* Disable color blend. This will allow through
+	 * hole cover the color below, so that the video on underlay
+	 * plane will be displayed */
+	glDisable(GL_BLEND);
+
+	pixman_region32_init(&repaint);
+	pixman_region32_intersect(&repaint,
+				  &pnode->view->transform.boundingbox, output_region);
+	pixman_region32_subtract(&repaint, &repaint, &pnode->view->clip);
+
+	if (!pixman_region32_not_empty(&repaint)) {
+		pixman_region32_fini(&repaint);
+		return;
+	}
+
+	pixman_region32_init_rect(&surface_hole, 0, 0,
+				  pnode->surface->width, pnode->surface->height);
+
+	repaint_region(gr, pnode, &repaint, &surface_hole, &sconf);
+
+	pixman_region32_fini(&surface_hole);
+	pixman_region32_fini(&repaint);
+}
+
+static void
 draw_paint_node(struct weston_paint_node *pnode,
 		pixman_region32_t *damage /* in global coordinates */)
 {
@@ -1272,6 +1324,8 @@ repaint_views(struct weston_output *output, pixman_region32_t *damage)
 				 z_order_link) {
 		if (pnode->view->plane == &compositor->primary_plane)
 			draw_paint_node(pnode, damage);
+		else if (pnode->need_through_hole)
+			draw_through_hole(pnode, &output->region);
 	}
 
 	glDisableVertexAttribArray(1);
