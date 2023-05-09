@@ -579,19 +579,6 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 			return NULL;
 		}
 
-		if (mode == DRM_OUTPUT_PROPOSE_STATE_MIXED) {
-			assert(scanout_state != NULL);
-			if (scanout_state->zpos >= plane->zpos_max) {
-				drm_debug(b, "\t\t\t\t[plane] not adding plane %d to "
-					     "candidate list: primary's zpos "
-					     "value (%"PRIu64") higher than "
-					     "plane's maximum value (%"PRIu64")\n",
-					     plane->plane_id, scanout_state->zpos,
-					     plane->zpos_max);
-				continue;
-			}
-		}
-
 		if (current_lowest_zpos == DRM_PLANE_ZPOS_INVALID_PLANE)
 			zpos = plane->zpos_max;
 		else
@@ -612,6 +599,14 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 			drm_debug(b, "\t\t\t\t[view] view %p has been placed to "
 				     "%s plane with computed zpos %"PRIu64"\n",
 				     ev, p_name, zpos);
+			/* Check if this ps is underlay plane, if so, the view
+			 * needs through hole on primary plane. */
+			if (mode == DRM_OUTPUT_PROPOSE_STATE_MIXED) {
+				assert(scanout_state != NULL);
+				if (scanout_state->zpos > ps->zpos) {
+					pnode->need_through_hole = true;
+				}
+			}
 			break;
 		}
 
@@ -1036,6 +1031,7 @@ drm_assign_planes(struct weston_output *output_base)
 			drm_debug(b, "\t[repaint] view %p using renderer "
 				     "composition\n", ev);
 			weston_view_move_to_plane(ev, primary);
+			pnode->need_through_hole = false;
 		}
 
 		if (!target_plane ||
