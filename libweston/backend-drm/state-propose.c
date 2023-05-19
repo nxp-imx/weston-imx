@@ -674,12 +674,17 @@ drm_output_propose_state(struct weston_output *output_base,
 	struct drm_output_state *state;
 	struct drm_plane_state *scanout_state = NULL;
 
-	pixman_region32_t renderer_region;
+	pixman_region32_t bottom_region;
 	pixman_region32_t occluded_region;
 
 	bool renderer_ok = (mode != DRM_OUTPUT_PROPOSE_STATE_PLANES_ONLY);
 	int ret;
-	uint64_t current_lowest_zpos = DRM_PLANE_ZPOS_INVALID_PLANE;
+	/* Record the current lowest zpos of the overlay planes */
+	uint64_t current_lowest_zpos_overlay = DRM_PLANE_ZPOS_INVALID_PLANE;
+	/* Record the current lowest zpos of the underlay plane */
+	uint64_t current_lowest_zpos_underlay = DRM_PLANE_ZPOS_INVALID_PLANE;
+	/* Record the current lowest zpos when finding planes for view */
+	uint64_t *current_lowest_zpos = NULL;
 
 	assert(!output->state_last);
 	state = drm_output_state_duplicate(output->state_cur,
@@ -738,6 +743,10 @@ drm_output_propose_state(struct weston_output *output_base,
 							  plane->state_cur);
 		/* assign the primary the lowest zpos value */
 		scanout_state->zpos = plane->zpos_min;
+		/* Set the current lowest zpos of the underlay plane to
+		 * scanout_state->zpos, the underlay planes need to look
+		 * down from the scanout plane */
+		current_lowest_zpos_underlay = scanout_state->zpos;
 		drm_debug(b, "\t\t[state] using renderer FB ID %lu for mixed "
 			     "mode for output %s (%lu)\n",
 			  (unsigned long) scanout_fb->fb_id, output->base.name,
@@ -746,8 +755,8 @@ drm_output_propose_state(struct weston_output *output_base,
 				scanout_state->zpos);
 	}
 
-	/* - renderer_region contains the total region which which will be
-	 *   covered by the renderer
+	/* - bottom_region contains the total region which which will be
+	 *   covered by the renderer and underlay region.
 	 * - occluded_region contains the total region which which will be
 	 *   covered by the renderer and hardware planes, where the view's
 	 *   visible-and-opaque region is added in both cases (the view's
@@ -755,7 +764,7 @@ drm_output_propose_state(struct weston_output *output_base,
 	 *   to skip the view, if it is completely occluded; includes the
 	 *   situation where occluded_region covers entire output's region.
 	 */
-	pixman_region32_init(&renderer_region);
+	pixman_region32_init(&bottom_region);
 	pixman_region32_init(&occluded_region);
 
 	wl_list_for_each(pnode, &output->base.paint_node_z_order_list,
@@ -771,6 +780,10 @@ drm_output_propose_state(struct weston_output *output_base,
 		             "output %s (%lu)\n",
 		          ev, output->base.name,
 			  (unsigned long) output->base.id);
+
+		current_lowest_zpos = &current_lowest_zpos_overlay;
+		current_lowest_zpos_underlay = MIN(current_lowest_zpos_underlay,
+		             current_lowest_zpos_overlay);
 
 		/* If this view doesn't touch our output at all, there's no
 		 * reason to do anything with it. */
@@ -848,14 +861,15 @@ drm_output_propose_state(struct weston_output *output_base,
 		}
 
 		/* Since we process views from top to bottom, we know that if
-		 * the view intersects the calculated renderer region, it must
-		 * be part of, or occluded by, it, and cannot go on a plane. */
-		pixman_region32_intersect(&surface_overlap, &renderer_region,
+		 * the view intersects the calculated bottom region, it must
+		 * be part of, or occluded by, it, and cannot go on an overlay
+		 * plane. */
+		pixman_region32_intersect(&surface_overlap, &bottom_region,
 					  &clipped_view);
 		if (pixman_region32_not_empty(&surface_overlap)) {
-			drm_debug(b, "\t\t\t\t[view] not assigning view %p to plane "
+			drm_debug(b, "\t\t\t\t[view] assign view %p to underlay plane "
 			             "(occluded by renderer views)\n", ev);
-			force_renderer = true;
+			current_lowest_zpos = &current_lowest_zpos_underlay;
 		}
 		pixman_region32_fini(&surface_overlap);
 
@@ -877,10 +891,10 @@ drm_output_propose_state(struct weston_output *output_base,
 		/* Now try to place it on a plane if we can. */
 		if (!force_renderer) {
 			drm_debug(b, "\t\t\t[plane] started with zpos %"PRIu64"\n",
-				      current_lowest_zpos);
+				      *current_lowest_zpos);
 			ps = drm_output_find_plane_for_view(state, pnode, mode,
 							    scanout_state,
-							    current_lowest_zpos);
+							    *current_lowest_zpos);
 		} else {
 			/* We are forced to place the view in the renderer, set
 			 * the failure reason accordingly. */
@@ -889,9 +903,9 @@ drm_output_propose_state(struct weston_output *output_base,
 		}
 
 		if (ps) {
-			current_lowest_zpos = ps->zpos;
+			*current_lowest_zpos = ps->zpos;
 			drm_debug(b, "\t\t\t[plane] next zpos to use %"PRIu64"\n",
-				      current_lowest_zpos);
+				      *current_lowest_zpos);
 		} else if (!ps && !renderer_ok) {
 			drm_debug(b, "\t\t[view] failing state generation: "
 				      "placing view %p to renderer not allowed\n",
@@ -899,14 +913,16 @@ drm_output_propose_state(struct weston_output *output_base,
 			pixman_region32_fini(&clipped_view);
 			goto err_region;
 		} else if (!ps) {
-			/* clipped_view contains the area that's going to be
-			 * visible on screen; add this to the renderer region */
-			pixman_region32_union(&renderer_region,
-					      &renderer_region,
-					      &clipped_view);
-
 			drm_debug(b, "\t\t\t\t[view] view %p will be placed "
 				     "on the renderer\n", ev);
+		}
+
+		if (!ps || ps->zpos < scanout_state->zpos) {
+			/* clipped_view contains the area that's going to be
+			 * visible on screen; add this to the renderer region */
+			pixman_region32_union(&bottom_region,
+					      &bottom_region,
+					      &clipped_view);
 		}
 
 		/* Opaque areas of our clipped view occlude areas behind it;
@@ -925,7 +941,7 @@ drm_output_propose_state(struct weston_output *output_base,
 		pixman_region32_fini(&clipped_view);
 	}
 
-	pixman_region32_fini(&renderer_region);
+	pixman_region32_fini(&bottom_region);
 	pixman_region32_fini(&occluded_region);
 
 	/* In renderer-only mode, we can't test the state as we don't have a
@@ -956,7 +972,7 @@ drm_output_propose_state(struct weston_output *output_base,
 	return state;
 
 err_region:
-	pixman_region32_fini(&renderer_region);
+	pixman_region32_fini(&bottom_region);
 	pixman_region32_fini(&occluded_region);
 err:
 	drm_output_state_free(state);
