@@ -1207,7 +1207,7 @@ drm_pending_state_apply_atomic(struct drm_pending_state *pending_state,
 			uint64_t active;
 
 			/* Ignore CRTCs that are in use */
-			if (crtc->output)
+			if (crtc->output && !crtc->output->destroy_pending)
 				continue;
 
 			/* We can't emit a disable on a CRTC that's already
