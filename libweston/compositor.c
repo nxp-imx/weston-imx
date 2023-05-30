@@ -133,6 +133,8 @@ weston_paint_node_create(struct weston_surface *surface,
 		break;
 	}
 
+	pnode->need_through_hole = false;
+
 	pnode->surface = surface;
 	wl_list_insert(&surface->paint_node_list, &pnode->surface_link);
 

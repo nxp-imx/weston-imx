@@ -452,6 +452,8 @@ struct weston_paint_node {
 	bool surf_xform_valid;
 
 	uint32_t try_view_on_plane_failure_reasons;
+
+	bool need_through_hole;
 };
 
 struct weston_paint_node *
