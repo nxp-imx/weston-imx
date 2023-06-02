@@ -562,6 +562,22 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_device *device,
 
 	if (fb) {
 		assert(fb->type == type);
+
+		const struct pixel_format_info *target_format;
+		if(is_opaque)
+			target_format = pixel_format_get_opaque_substitute(fb->format);
+		else
+			target_format = pixel_format_get_info(gbm_bo_get_format(bo));
+
+		if (target_format->format != fb->format->format) {
+			fb->format = target_format;
+			if (drm_fb_addfb(device, fb) != 0) {
+				weston_log("failed to create kms fb: %s\n",
+				   strerror(errno));
+				goto err_free;
+			}
+		}
+
 		return drm_fb_ref(fb);
 	}
 
