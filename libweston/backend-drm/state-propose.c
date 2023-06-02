@@ -796,8 +796,10 @@ drm_output_propose_state(struct weston_output *output_base,
 			if (dmabuf) {
 				if (dmabuf->attributes.format == DRM_FORMAT_ABGR8888)
 					force_renderer = true;
-				else
+				else {
+					pixman_region32_fini(&surface_overlap);
 					goto prepare_plane;
+				}
 			}
 		}
 
