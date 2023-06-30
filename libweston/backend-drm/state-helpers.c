@@ -221,6 +221,7 @@ drm_plane_state_coords_for_paint_node(struct drm_plane_state *state,
 	struct drm_output *output = state->output;
 	struct weston_view *ev = node->view;
 	struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	pixman_region32_t dest_rect;
 	pixman_box32_t *box;
 	struct weston_coord corners[2];
@@ -228,11 +229,29 @@ drm_plane_state_coords_for_paint_node(struct drm_plane_state *state,
 	uint16_t min_alpha = state->plane->alpha_min;
 	uint16_t max_alpha = state->plane->alpha_max;
 
+	float scale = 1.0;
+	struct weston_matrix scale_mat;
+
 	if (!drm_paint_node_transform_supported(node, state->plane))
 		return false;
 
 	assert(node->valid_transform);
 	state->rotation = drm_rotation_from_output_transform(state->plane, node->transform);
+
+	/* When buffer scale > 1, clients will provide higher resolution buffer data
+	 * on high resolution output. In order to maintain the original output size
+	 * and position, it needs to keep the mode scale and buffer scale equal.
+	 *
+	 * Here, check whether the buffer scale and mode scale are equal, if not,
+	 * We need to judge whether secondary scaling is required during global->output
+	 * coordinate transformation according to buffer scale and mode scale to maintain
+	 * the original output size. */
+	if (viewport->buffer.scale != output->base.current_scale)
+		scale = (float) MAX((viewport->buffer.scale / output->base.current_scale), 1);
+
+	weston_matrix_init(&scale_mat);
+	/* Generate a scaling matrix using the scale parameter above. */
+	weston_matrix_scale(&scale_mat, scale, scale, 1.0);
 
 	/* Update the base weston_plane co-ordinates. */
 	box = pixman_region32_extents(&ev->transform.boundingbox);
@@ -249,10 +268,16 @@ drm_plane_state_coords_for_paint_node(struct drm_plane_state *state,
 
 	box = pixman_region32_extents(&dest_rect);
 
-	state->dest_x = box->x1;
-	state->dest_y = box->y1;
-	state->dest_w = box->x2 - box->x1;
-	state->dest_h = box->y2 - box->y1;
+	/* After the coordinate transformation, do a second scaling to get
+	 * back to the original output size. */
+	corners[0] = weston_matrix_transform_coord(&scale_mat,
+			weston_coord(box->x1, box->y1));
+	corners[1] = weston_matrix_transform_coord(&scale_mat,
+			weston_coord(box->x2, box->y2));
+	state->dest_x = corners[0].x;
+	state->dest_y = corners[0].y;
+	state->dest_w = corners[1].x - corners[0].x;
+	state->dest_h = corners[1].y - corners[0].y;
 
 	/* Now calculate the source rectangle, by transforming the destination
 	 * rectangle by the output to buffer matrix. */
