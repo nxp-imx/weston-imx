@@ -209,12 +209,25 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 {
 	struct drm_output *output = state->output;
 	struct weston_buffer *buffer = ev->surface->buffer_ref.buffer;
+	struct weston_buffer_viewport *viewport = &ev->surface->buffer_viewport;
 	pixman_region32_t dest_rect, src_rect;
 	pixman_box32_t *box, tbox;
 	float sxf1, syf1, sxf2, syf2;
 
+	int32_t scale = 1;
+
 	if (!drm_view_transform_supported(ev, &output->base))
 		return false;
+
+	/* When buffer scale > 1, clients will provide higher resolution buffer data
+	 * on high resolution output. In order to maintain the original output size
+	 * and position, it needs to keep the mode scale and buffer scale equal.
+	 *
+	 * Here, check whether the buffer scale and mode scale are equal, if not,
+	 * We need to calculate a new scaling factor based on the scale of the current
+	 * mode and buffer. */
+	if (viewport->buffer.scale != output->base.current_scale)
+		scale = MAX((viewport->buffer.scale / output->base.current_scale), 1);
 
 	/* Update the base weston_plane co-ordinates. */
 	box = pixman_region32_extents(&ev->transform.boundingbox);
@@ -232,7 +245,7 @@ drm_plane_state_coords_for_view(struct drm_plane_state *state,
 	tbox = weston_transformed_rect(output->base.width,
 				       output->base.height,
 				       output->base.transform,
-				       output->base.current_scale,
+				       scale,
 				       *box);
 	state->dest_x = tbox.x1;
 	state->dest_y = tbox.y1;
