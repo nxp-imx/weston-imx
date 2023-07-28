@@ -1877,6 +1877,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->capabilities |= WESTON_CAP_ROTATION_ANY;
 	ec->capabilities |= WESTON_CAP_CAPTURE_YFLIP;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
+	ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
@@ -1921,11 +1922,6 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		weston_log("Retrieving EGL extension string failed.\n");
 		return -1;
 	}
-
-	if (weston_check_egl_extension(extensions, "GL_EXT_read_format_bgra"))
-		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
-	else
-		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8b8g8r8);
 
 	g2d_renderer_set_egl_device(gr);
 
