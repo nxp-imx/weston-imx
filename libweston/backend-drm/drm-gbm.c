@@ -378,6 +378,9 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 		case DRM_FORMAT_XRGB8888:
 			g2dFormat = G2D_BGRX8888;
 			break;
+		case DRM_FORMAT_ARGB8888:
+			g2dFormat = G2D_BGRA8888;
+			break;
 		case DRM_FORMAT_RGB565:
 			g2dFormat = G2D_RGB565;
 			break;
