@@ -912,7 +912,8 @@ drm_output_propose_state(struct weston_output *output_base,
 				     "on the renderer\n", ev);
 		}
 
-		if (!ps || ps->zpos < scanout_state->zpos) {
+		if (!ps || (mode == DRM_OUTPUT_PROPOSE_STATE_MIXED &&
+		    ps->zpos < scanout_state->zpos)) {
 			/* clipped_view contains the area that's going to be
 			 * visible on screen; add this to the renderer region */
 			pixman_region32_union(&bottom_region,
