@@ -117,14 +117,19 @@ seat_open_device(struct weston_launcher *launcher, const char *path, int flags)
 	struct launcher_libseat *wl = wl_container_of(launcher, wl, base);
 	struct launcher_libseat_device *dev;
 	struct stat st;
+	int loop = 0;
 
 	dev = zalloc(sizeof(struct launcher_libseat_device));
 	if (dev == NULL) {
 		goto err_alloc;
 	}
 
+retry:
 	dev->device_id = libseat_open_device(wl->seat, path, &dev->fd);
 	if (dev->device_id == -1) {
+		sleep(1);
+		if(loop++ < 10)
+			goto retry;
 		goto err_open;
 	}
 
