@@ -137,6 +137,7 @@ struct g2d_renderer {
 
 	PFNEGLQUERYDISPLAYATTRIBEXTPROC query_display_attrib;
 	PFNEGLQUERYDEVICESTRINGEXTPROC query_device_string;
+	bool has_device_query;
 
 	bool has_dmabuf_import_modifiers;
 	PFNEGLQUERYDMABUFFORMATSEXTPROC query_dmabuf_formats;
@@ -1923,7 +1924,16 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 		return -1;
 	}
 
-	g2d_renderer_set_egl_device(gr);
+	if (weston_check_egl_extension(extensions, "EGL_EXT_device_query")) {
+		gr->query_display_attrib =
+			(void *) eglGetProcAddress("eglQueryDisplayAttribEXT");
+		gr->query_device_string =
+			(void *) eglGetProcAddress("eglQueryDeviceStringEXT");
+		gr->has_device_query = true;
+	}
+
+	if (gr->has_device_query)
+		g2d_renderer_set_egl_device(gr);
 
 	if (weston_check_egl_extension(extensions,
 				"EGL_EXT_image_dma_buf_import_modifiers")) {
