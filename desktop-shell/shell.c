@@ -2257,8 +2257,7 @@ desktop_surface_removed(struct weston_desktop_surface *desktop_surface,
 	if (weston_surface_is_mapped(surface) &&
 	    shsurf->shell->win_close_animation_type == ANIMATION_FADE) {
 
-		if (shsurf->shell->compositor->state == WESTON_COMPOSITOR_ACTIVE &&
-		    shsurf->view->output->power_state == WESTON_OUTPUT_POWER_NORMAL) {
+		if (shsurf->shell->compositor->state == WESTON_COMPOSITOR_ACTIVE) {
 			pixman_region32_fini(&surface->pending.input);
 			pixman_region32_init(&surface->pending.input);
 			pixman_region32_fini(&surface->input);
