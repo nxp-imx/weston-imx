@@ -2017,8 +2017,7 @@ desktop_surface_removed(struct weston_desktop_surface *desktop_surface,
 	if (weston_view_is_mapped(shsurf->view) &&
 	    shsurf->shell->win_close_animation_type == ANIMATION_FADE) {
 
-		if (shsurf->shell->compositor->state == WESTON_COMPOSITOR_ACTIVE &&
-		    shsurf->view->output->power_state == WESTON_OUTPUT_POWER_NORMAL) {
+		if (shsurf->shell->compositor->state == WESTON_COMPOSITOR_ACTIVE) {
 			struct weston_coord_global pos;
 
 			pixman_region32_fini(&surface->pending.input);
