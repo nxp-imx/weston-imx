@@ -66,6 +66,22 @@ typedef EGLBoolean (EGLAPIENTRYP PFNEGLUPDATEWAYLANDBUFFERWL)(EGLDisplay dpy, st
 #endif
 #endif
 
+enum g2d_rotation_angle
+{
+	/* rotation angle 0 */
+	G2D_ROTATION_ANGLE_0 = 0x10,
+
+	/* clockwise rotation */
+	G2D_ROTATION_ANGLE_POSITIVE_90 = 0x20,
+	G2D_ROTATION_ANGLE_POSITIVE_180 = 0x40,
+	G2D_ROTATION_ANGLE_POSITIVE_270 = 0x80,
+
+	/* Anticlockwise rotation */
+	G2D_ROTATION_ANGLE_NEGATIVE_90 = 0x08,
+	G2D_ROTATION_ANGLE_NEGATIVE_180 = 0x04,
+	G2D_ROTATION_ANGLE_NEGATIVE_270 = 0x02,
+};
+
 struct wl_viv_buffer
 {
 	struct wl_resource *resource;
@@ -209,22 +225,31 @@ calculate_rect_with_transform(int surfaceWidth, int surfaceHeight,
 }
 
 static enum g2d_rotation
-convert_transform_to_rot(uint32_t transform)
+convert_transform_to_rot(uint32_t view_transform, uint32_t output_transform)
 {
+	uint8_t angle = G2D_ROTATION_ANGLE_0;
 	enum g2d_rotation rot;
-	switch(transform) {
-	case WL_OUTPUT_TRANSFORM_NORMAL:
+
+	/* First, rotate according to the angle set by the client. */
+	angle = angle << view_transform;
+	/* Then, rotate according to the angle of the output. */
+	angle = angle >> output_transform;
+
+	switch(angle) {
+	case G2D_ROTATION_ANGLE_0:
 	default:
 		rot = G2D_ROTATION_0;
 		break;
-	case WL_OUTPUT_TRANSFORM_90:
-		/*For source rotation*/
+	case G2D_ROTATION_ANGLE_POSITIVE_270:
+	case G2D_ROTATION_ANGLE_NEGATIVE_90:
 		rot = G2D_ROTATION_90;
 		break;
-	case WL_OUTPUT_TRANSFORM_270:
+	case G2D_ROTATION_ANGLE_POSITIVE_90:
+	case G2D_ROTATION_ANGLE_NEGATIVE_270:
 		rot = G2D_ROTATION_270;
 		break;
-	case WL_OUTPUT_TRANSFORM_180:
+	case G2D_ROTATION_ANGLE_POSITIVE_180:
+	case G2D_ROTATION_ANGLE_NEGATIVE_180:
 		rot = G2D_ROTATION_180;
 		break;
 	}
@@ -385,7 +410,7 @@ g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_
 }
 
 static void
-g2d_clip_rects(enum wl_output_transform transform,
+g2d_clip_rects(enum g2d_rotation transform,
 			g2dRECT *srcRect,
 			g2dRECT *dstrect,
 			int dstWidth,
@@ -396,8 +421,8 @@ g2d_clip_rects(enum wl_output_transform transform,
 	float scale_v = 1.0f;
 	float scale_h = 1.0f;
 
-	if(transform == WL_OUTPUT_TRANSFORM_90
-		|| transform == WL_OUTPUT_TRANSFORM_270)
+	if(transform == G2D_ROTATION_90
+		|| transform == G2D_ROTATION_270)
 	{
 		scale_h = (float)srcHeight / (dstrect->right - dstrect->left);
 		scale_v = (float)srcWidth / (dstrect->bottom - dstrect->top);
@@ -408,7 +433,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 		scale_v = (float)srcHeight / (dstrect->bottom - dstrect->top);
 	}
 	switch (transform) {
-	case WL_OUTPUT_TRANSFORM_NORMAL:
+	case G2D_ROTATION_0:
 		if(dstrect->left < 0)
 		{
 			srcRect->left += floorf((float)(-dstrect->left) * scale_h);
@@ -438,7 +463,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 				return;
 		}
 		break;
-	case WL_OUTPUT_TRANSFORM_270:
+	case G2D_ROTATION_270:
 		if(dstrect->left < 0)
 		{
 			srcRect->bottom -= floorf((float)(-dstrect->left) * scale_h);
@@ -455,13 +480,19 @@ g2d_clip_rects(enum wl_output_transform transform,
 		}
 		if(dstrect->top < 0)
 		{
-			srcRect->left += floorf((float)(-dstrect->top) * scale_h);
+			srcRect->left += floorf((float)(-dstrect->top) * scale_v);
 			dstrect->top = 0;
 			if(srcRect->left > srcRect->right)
 				return;
 		}
+		if(dstrect->right > dstWidth) {
+			srcRect->top += floorf((float)(dstrect->right - dstWidth) * scale_h);
+			dstrect->right = dstWidth;
+			if(srcRect->top >= srcRect->bottom)
+				return;
+		}
 		break;
-	case WL_OUTPUT_TRANSFORM_90:
+	case G2D_ROTATION_90:
 		if(dstrect->left < 0)
 		{
 			srcRect->top += floorf((float)(-dstrect->left) * scale_h);
@@ -491,7 +522,7 @@ g2d_clip_rects(enum wl_output_transform transform,
 				return;
 		}
 		break;
-	case WL_OUTPUT_TRANSFORM_180:
+	case G2D_ROTATION_180:
 		if(dstrect->left < 0)
 		{
 			srcRect->right -= floorf((float)(-dstrect->left) * scale_h);
@@ -510,6 +541,12 @@ g2d_clip_rects(enum wl_output_transform transform,
 		{
 			srcRect->bottom -= floorf((float)(-dstrect->top) * scale_v);
 			dstrect->top = 0;
+			if(srcRect->top >= srcRect->bottom)
+				return;
+		}
+		if(dstrect->bottom > dstHeight) {
+			srcRect->top += floorf((float)(dstrect->bottom - dstHeight) * scale_v);
+			dstrect->bottom = dstHeight;
 			if(srcRect->top >= srcRect->bottom)
 				return;
 		}
@@ -658,15 +695,11 @@ repaint_region(struct weston_paint_node *pnode,
 					  dstsurface->base.height,
 					  output->transform, &dstrect);
 
-	if(view_transform != output->transform)
-	{
-		g2d_clip_rects(output->transform, &srcRect, &dstrect, dstWidth, dstHeight);
-		srcsurface.base.rot = convert_transform_to_rot(output->transform);
-	} else {
-		/* if the view is transformed by compositor, we only need handle input crop
-		 * according to dst rect */
-		g2d_clip_rects(WL_OUTPUT_TRANSFORM_NORMAL, &srcRect, &dstrect, dstWidth, dstHeight);
-	}
+	/* Calculate the angle at which the frame buffer really needs to be rotated based
+	 * on the rotation angle of the output and the angle set by the client.
+	 */
+	srcsurface.base.rot = convert_transform_to_rot(view_transform, output->transform);
+	g2d_clip_rects(srcsurface.base.rot, &srcRect, &dstrect, dstWidth, dstHeight);
 
 	for (i = 0; i < nquads; i++)
 	{
