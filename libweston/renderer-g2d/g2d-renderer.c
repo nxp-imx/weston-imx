@@ -1934,7 +1934,7 @@ g2d_renderer_display_create(struct weston_compositor *ec, const struct g2d_rende
 	eglInitialize(gr->egl_display, NULL, NULL);
 
 	extensions =
-		(const char *) eglQueryString(gr->egl_display, EGL_EXTENSIONS);
+		(const char *) eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
 	if (!extensions) {
 		weston_log("Retrieving EGL extension string failed.\n");
 		return -1;
