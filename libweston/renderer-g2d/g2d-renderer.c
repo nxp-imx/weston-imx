@@ -224,6 +224,28 @@ calculate_rect_with_transform(int surfaceWidth, int surfaceHeight,
 	}
 }
 
+static void
+convert_size_by_view_transform(int *width_out, int *height_out, int width, int height, uint32_t transform)
+{
+		switch (transform) {
+	case WL_OUTPUT_TRANSFORM_NORMAL:
+	case WL_OUTPUT_TRANSFORM_180:
+	case WL_OUTPUT_TRANSFORM_FLIPPED:
+	case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+	default:
+		*width_out = width;
+		*height_out = height;
+		break;
+	case WL_OUTPUT_TRANSFORM_90:
+	case WL_OUTPUT_TRANSFORM_270:
+	case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+	case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+		*width_out = height;
+		*height_out = width;
+		break;
+	}
+}
+
 static enum g2d_rotation
 convert_transform_to_rot(uint32_t view_transform, uint32_t output_transform)
 {
@@ -629,8 +651,10 @@ repaint_region(struct weston_paint_node *pnode,
 	uint32_t view_transform = pnode->surface->buffer_viewport.buffer.transform;
 	int src_x = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_x);
 	int src_y = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_y);
-	int src_width = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_width);
-	int src_height = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_height);
+	int width = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_width);
+	int height = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_height);
+	int src_width = -1;
+	int src_height = -1;
 	int scale = pnode->surface->buffer_viewport.buffer.scale;
 	const int nvtx_max = 8;
 	if (pnode->view->alpha < 1.0) {
@@ -651,6 +675,8 @@ repaint_region(struct weston_paint_node *pnode,
 	{
 		return;
 	}
+
+	convert_size_by_view_transform(&src_width, &src_height, width, height, view_transform);
 
 	rects = pixman_region32_rectangles(region, &nrects);
 	assert((nrects > 0) && (nquads > 0));
