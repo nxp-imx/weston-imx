@@ -3018,22 +3018,16 @@ panel_committed(struct weston_surface *es,
 
 	view = container_of(es->views.next, struct weston_view, surface_link);
 
-	/* XXX delete me eventually - it would be better if we didn't get here
-	 * with a dirty transform at all, but for now just make sure the
-	 * transform is updated here. */
-	weston_view_update_transform(view);
-
-	get_panel_size(shell, view, &width, &height);
 	switch (shell->panel_position) {
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_TOP:
 		break;
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_BOTTOM:
-		y = view->output->height - height;
+		y = view->output->height - es->height;
 		break;
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_LEFT:
 		break;
 	case WESTON_DESKTOP_SHELL_PANEL_POSITION_RIGHT:
-		x = view->output->width - width;
+		x = view->output->width - es->width;
 		break;
 	}
 
