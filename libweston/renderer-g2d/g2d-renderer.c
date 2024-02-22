@@ -1264,7 +1264,13 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 
 	switch (wl_shm_buffer_get_format(buffer->shm_buffer)) {
 		case WL_SHM_FORMAT_XRGB8888:
+		case WL_SHM_FORMAT_XBGR8888:
 		case WL_SHM_FORMAT_ARGB8888:
+		case WL_SHM_FORMAT_ABGR8888:
+		case WL_SHM_FORMAT_BGRX8888:
+		case WL_SHM_FORMAT_BGRA8888:
+		case WL_SHM_FORMAT_RGBA8888:
+		case WL_SHM_FORMAT_RGBX8888:
 		case WL_SHM_FORMAT_RGB565:
 			n_planes = 1;
 			height = buffer->height;
@@ -1275,7 +1281,22 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 			height = ALIGN_TO_16(buffer->height);
 			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
 			break;
+		case WL_SHM_FORMAT_UYVY:
+			n_planes = 1;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			break;
 		case WL_SHM_FORMAT_NV12:
+			n_planes = 2;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			plane_size[1] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height / 2;
+			src_plane_offset[1] = plane_size[0];
+			dst_plane_offset[1] = alignedWidth * height;
+			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
+			uv_dst_stride = alignedWidth;
+			break;
+		case WL_SHM_FORMAT_NV21:
 			n_planes = 2;
 			height = ALIGN_TO_16(buffer->height);
 			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
@@ -1425,16 +1446,50 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 		g2dFormat = G2D_BGRX8888;
 		gs->bpp = 4;
 		break;
+	case WL_SHM_FORMAT_XBGR8888:
+		g2dFormat = G2D_RGBX8888;
+		gs->bpp = 4;
+		break;
+	case WL_SHM_FORMAT_BGRX8888:
+		g2dFormat = G2D_XRGB8888;
+		gs->bpp = 4;
+		break;
+	case WL_SHM_FORMAT_RGBX8888:
+		g2dFormat = G2D_XBGR8888;
+		gs->bpp = 4;
+		break;
 	case WL_SHM_FORMAT_ARGB8888:
 		g2dFormat = G2D_BGRA8888;
+		gs->bpp = 4;
+		break;
+	case WL_SHM_FORMAT_ABGR8888:
+		g2dFormat = G2D_RGBA8888;
+		gs->bpp = 4;
+		break;
+	case WL_SHM_FORMAT_BGRA8888:
+		g2dFormat = G2D_ARGB8888;
+		gs->bpp = 4;
+		break;
+	case WL_SHM_FORMAT_RGBA8888:
+		g2dFormat = G2D_ABGR8888;
 		gs->bpp = 4;
 		break;
 	case WL_SHM_FORMAT_RGB565:
 		g2dFormat = G2D_RGB565;
 		gs->bpp = 2;
 		break;
+	case WL_SHM_FORMAT_BGR565:
+		g2dFormat = G2D_BGR565;
+		gs->bpp = 2;
+		break;
 	case WL_SHM_FORMAT_YUYV:
 		g2dFormat = G2D_YUYV;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 2;
+		gs->bpp = 2;
+		break;
+	case WL_SHM_FORMAT_UYVY:
+		g2dFormat = G2D_UYVY;
 		height = ALIGN_TO_16(buffer->height);
 		buffer_length = alignedWidth * height * 2;
 		gs->bpp = 2;
@@ -1445,8 +1500,26 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 		buffer_length = alignedWidth * height * 3/2;
 		gs->bpp = 1;
 		break;
+	case WL_SHM_FORMAT_YVU420:
+		g2dFormat = G2D_YV12;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3/2;
+		gs->bpp = 1;
+		break;
 	case WL_SHM_FORMAT_NV12:
 		g2dFormat = G2D_NV12;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3/2;
+		gs->bpp = 1;
+		break;
+	case WL_SHM_FORMAT_NV16:
+		g2dFormat = G2D_NV16;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3/2;
+		gs->bpp = 1;
+		break;
+	case WL_SHM_FORMAT_NV21:
+		g2dFormat = G2D_NV21;
 		height = ALIGN_TO_16(buffer->height);
 		buffer_length = alignedWidth * height * 3/2;
 		gs->bpp = 1;
@@ -1533,24 +1606,64 @@ g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
 			*g2dFormat = G2D_RGBA8888;
 			*bpp = 4;
 			break;
+		case DRM_FORMAT_BGRA8888:
+			*g2dFormat = G2D_ARGB8888;
+			*bpp = 4;
+			break;
+		case DRM_FORMAT_RGBA8888:
+			*g2dFormat = G2D_ABGR8888;
+			*bpp = 4;
+			break;
 		case DRM_FORMAT_XRGB8888:
 			*g2dFormat = G2D_BGRX8888;
+			*bpp = 4;
+			break;
+		case DRM_FORMAT_XBGR8888:
+			*g2dFormat = G2D_RGBX8888;
+			*bpp = 4;
+			break;
+		case DRM_FORMAT_BGRX8888:
+			*g2dFormat = G2D_XRGB8888;
+			*bpp = 4;
+			break;
+		case DRM_FORMAT_RGBX8888:
+			*g2dFormat = G2D_XBGR8888;
 			*bpp = 4;
 			break;
 		case DRM_FORMAT_RGB565:
 			*g2dFormat = G2D_RGB565;
 			*bpp = 2;
 			break;
+		case DRM_FORMAT_BGR565:
+			*g2dFormat = G2D_BGR565;
+			*bpp = 2;
+			break;
 		case DRM_FORMAT_YUYV:
 			*g2dFormat = G2D_YUYV;
+			*bpp = 2;
+			break;
+		case DRM_FORMAT_UYVY:
+			*g2dFormat = G2D_UYVY;
 			*bpp = 2;
 			break;
 		case DRM_FORMAT_NV12:
 			*g2dFormat = G2D_NV12;
 			*bpp = 1;
 			break;
+		case DRM_FORMAT_NV16:
+			*g2dFormat = G2D_NV16;
+			*bpp = 1;
+			break;
+		case DRM_FORMAT_NV21:
+			*g2dFormat = G2D_NV21;
+			*bpp = 1;
+			break;
 		case DRM_FORMAT_YUV420:
 			*g2dFormat = G2D_I420;
+			*bpp = 1;
+			break;
+		case DRM_FORMAT_YVU420:
+			*g2dFormat = G2D_YV12;
 			*bpp = 1;
 			break;
 		default:
@@ -1619,18 +1732,38 @@ static void
 g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 			int **formats, int *num_formats)
 {
+	struct g2d_renderer *gr = get_renderer(wc);
+	int hardware_v1_available, hardware_v2_available, g2d_offset = 0;
 	int num;
 	static const int dma_formats[] = {
 		DRM_FORMAT_ARGB8888,
-		DRM_FORMAT_ABGR8888,
 		DRM_FORMAT_XRGB8888,
 		DRM_FORMAT_RGB565,
 		DRM_FORMAT_YUYV,
+		DRM_FORMAT_UYVY,
 		DRM_FORMAT_NV12,
+		DRM_FORMAT_NV16,
+		DRM_FORMAT_NV21,
 		DRM_FORMAT_YUV420,
+		DRM_FORMAT_YVU420,
+		DRM_FORMAT_ABGR8888,
+		DRM_FORMAT_BGRA8888,
+		DRM_FORMAT_RGBA8888,
+		DRM_FORMAT_XBGR8888,
+		DRM_FORMAT_BGRX8888,
+		DRM_FORMAT_RGBX8888,
 	};
 
-	num = ARRAY_LENGTH(dma_formats);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
+	if(hardware_v1_available == 1) {
+		g2d_offset = 6;
+	}
+	else if(hardware_v2_available == 1) {
+		g2d_offset = 2;
+	}
+
+	num = ARRAY_LENGTH(dma_formats) - g2d_offset;
 	*formats = calloc(num, sizeof(int));
 	memcpy(*formats, dma_formats, num * sizeof(int));
 
@@ -2142,6 +2275,7 @@ static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
+	int hardware_v1_available, hardware_v2_available = 0;
 
 	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
@@ -2192,10 +2326,27 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
 	ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
 
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
+
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YVU420);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV12);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV16);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV21);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
+	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_UYVY);
+	if(hardware_v1_available != 1 && hardware_v2_available != 1) {
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRX8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBX8888);
+	}
+	if(hardware_v1_available != 1) {
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRA8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBA8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_ABGR8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XBGR8888);
+	}
 
 	wl_signal_init(&gr->destroy_signal);
 
