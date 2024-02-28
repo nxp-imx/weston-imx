@@ -1737,7 +1737,7 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 {
 	struct g2d_surface_state *gs = get_surface_state(es);
 	struct linux_dmabuf_buffer *dmabuf = buffer->dmabuf;
-	int alignedWidth = 0, alignedHeight = 0;
+	int alignedWidth = 0;
 	enum g2d_format g2dFormat;
 	unsigned int *paddr;
 	int i = 0;
@@ -1751,10 +1751,6 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if(dmabuf->attributes.modifier == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED ||
 	   dmabuf->attributes.modifier == DRM_FORMAT_MOD_VIVANTE_SPLIT_SUPER_TILED) {
 		alignedWidth  = ALIGN_TO_64(buffer->width);
-		alignedHeight = ALIGN_TO_64(buffer->height);
-	} else {
-		alignedWidth  = ALIGN_TO_16(buffer->width);
-		alignedHeight = ALIGN_TO_16(buffer->height);
 	}
 	g2d_renderer_get_g2dformat_from_dmabuf(dmabuf->attributes.format, &g2dFormat, &bpp);
 
@@ -1770,8 +1766,8 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gs->g2d_surface.base.top  = 0;
 	gs->g2d_surface.base.right	= buffer->width;
 	gs->g2d_surface.base.bottom = buffer->height;
-	gs->g2d_surface.base.width	= alignedWidth;
-	gs->g2d_surface.base.height = alignedHeight;
+	gs->g2d_surface.base.width	= buffer->width;
+	gs->g2d_surface.base.height = buffer->height;
 	gs->g2d_surface.base.rot	= G2D_ROTATION_0;
 	if (dmabuf->attributes.modifier == DRM_FORMAT_MOD_AMPHION_TILED) {
 		gs->g2d_surface.base.stride = dmabuf->attributes.stride[0];
