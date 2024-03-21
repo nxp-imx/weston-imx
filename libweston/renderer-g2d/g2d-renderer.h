@@ -55,13 +55,21 @@ struct g2d_renderer_display_options {
 	void * native_window;
 };
 
+struct g2d_renderer_output_options {
+	struct weston_size fb_size;
+	struct weston_geometry area;
+	const struct pixel_format_info *formats;
+	unsigned formats_count;
+};
+
 struct g2d_renderer_interface {
 	int (*create)(struct weston_compositor *ec);
 
 	int (*display_create)(struct weston_compositor *ec,
 				const struct g2d_renderer_display_options *options);
 
-	int (*output_create)(struct weston_output *output);
+	int (*output_create)(struct weston_output *output,
+				const struct g2d_renderer_output_options *options);
 
 	int (*create_g2d_image)(struct g2d_surfaceEx* g2dSurface,
 				enum g2d_format g2dFormat,
