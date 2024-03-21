@@ -44,6 +44,7 @@
 
 #include <libweston/libweston.h>
 #include "g2d-renderer.h"
+#include "output-capture.h"
 #include "vertex-clipping.h"
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
@@ -52,6 +53,7 @@
 #include "shared/helpers.h"
 #include "shared/platform.h"
 #include "pixel-formats.h"
+#include "shared/xalloc.h"
 
 #define BUFFER_DAMAGE_COUNT 3
 #define ALIGN_TO_16(a) (((a) + 15) & ~15)
@@ -779,6 +781,121 @@ ensure_surface_buffer_is_ready(struct g2d_renderer *gr,
 	return ret;
 }
 
+static bool
+g2d_renderer_do_capture(struct weston_output *output, struct weston_buffer *into,
+		       const struct weston_geometry *rect)
+{
+	struct wl_shm_buffer *shm = into->shm_buffer;
+	const struct pixel_format_info *fmt = into->pixel_format;
+	void *shm_pixels;
+	void *read_target;
+	int32_t stride;
+	pixman_image_t *tmp = NULL;
+
+	assert(into->type == WESTON_BUFFER_SHM);
+	assert(shm);
+
+	stride = wl_shm_buffer_get_stride(shm);
+	if (stride % 4 != 0)
+		return false;
+
+	shm_pixels = wl_shm_buffer_get_data(shm);
+
+	tmp = pixman_image_create_bits(fmt->pixman_format,
+					   rect->width, rect->height,
+					   NULL, 0);
+	if (!tmp)
+		return false;
+
+	read_target = pixman_image_get_data(tmp);
+
+	wl_shm_buffer_begin_access(shm);
+
+	g2d_renderer_read_pixels(output, fmt, read_target, rect->x, rect->y, rect->width, rect->height);
+
+	if (tmp) {
+		pixman_image_t *shm_image;
+		pixman_transform_t flip;
+
+		shm_image = pixman_image_create_bits_no_clear(fmt->pixman_format,
+							      rect->width,
+							      rect->height,
+							      shm_pixels,
+							      stride);
+		abort_oom_if_null(shm_image);
+
+		pixman_transform_init_scale(&flip, pixman_fixed_1,
+					    pixman_fixed_minus_1);
+		pixman_transform_translate(&flip, NULL,	0,
+					   pixman_int_to_fixed(rect->height));
+		pixman_image_set_transform(tmp, &flip);
+
+		pixman_image_composite32(PIXMAN_OP_SRC,
+					 tmp,       /* src */
+					 NULL,      /* mask */
+					 shm_image, /* dest */
+					 0, 0,      /* src x,y */
+					 0, 0,      /* mask x,y */
+					 0, 0,      /* dest x,y */
+					 rect->width, rect->height);
+
+		pixman_image_unref(shm_image);
+		pixman_image_unref(tmp);
+	}
+
+	wl_shm_buffer_end_access(shm);
+
+	return true;
+}
+
+static void
+g2d_renderer_do_capture_tasks(struct weston_output *output,
+			     enum weston_output_capture_source source)
+{
+	struct g2d_output_state *go = get_output_state(output);
+	const struct pixel_format_info *format;
+	struct weston_capture_task *ct;
+	struct weston_geometry rect;
+
+	switch (source) {
+	case WESTON_OUTPUT_CAPTURE_SOURCE_FRAMEBUFFER:
+		format = output->compositor->read_format;
+		rect = go->area;
+		rect.y = go->fb_size.height - go->area.y - go->area.height;
+		break;
+	case WESTON_OUTPUT_CAPTURE_SOURCE_FULL_FRAMEBUFFER:
+		format = output->compositor->read_format;
+		rect.x = 0;
+		rect.y = 0;
+		rect.width = go->fb_size.width;
+		rect.height = go->fb_size.height;
+		break;
+	default:
+		assert(0);
+		return;
+	}
+
+	while ((ct = weston_output_pull_capture_task(output, source, rect.width,
+						     rect.height, format))) {
+		struct weston_buffer *buffer = weston_capture_task_get_buffer(ct);
+
+		assert(buffer->width == rect.width);
+		assert(buffer->height == rect.height);
+		assert(buffer->pixel_format->format == format->format);
+
+		if (buffer->type != WESTON_BUFFER_SHM ||
+		    buffer->buffer_origin != ORIGIN_TOP_LEFT) {
+			weston_capture_task_retire_failed(ct, "G2D: unsupported buffer");
+			continue;
+		}
+
+		if (g2d_renderer_do_capture(output, buffer, &rect))
+			weston_capture_task_retire_complete(ct);
+		else
+			weston_capture_task_retire_failed(ct, "G2D: capture failed");
+	}
+}
+
 static void
 global_to_surface(pixman_box32_t *rect, struct weston_view *ev,
 		  struct clipper_vertex polygon[4])
@@ -1002,6 +1119,11 @@ g2d_renderer_repaint_output(struct weston_output *output,
 
 	pixman_region32_fini(&total_damage);
 	pixman_region32_fini(&buffer_damage);
+
+	g2d_renderer_do_capture_tasks(output,
+				     WESTON_OUTPUT_CAPTURE_SOURCE_FRAMEBUFFER);
+	g2d_renderer_do_capture_tasks(output,
+				     WESTON_OUTPUT_CAPTURE_SOURCE_FULL_FRAMEBUFFER);
 
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	fence_fd = g2d_create_fence_fd(gr->handle);
@@ -1328,6 +1450,16 @@ g2d_renderer_resize_output(struct weston_output *output,
 
 	go->fb_size = *fb_size;
 	go->area = *area;
+
+	weston_output_update_capture_info(output,
+					  WESTON_OUTPUT_CAPTURE_SOURCE_FRAMEBUFFER,
+					  area->width, area->height,
+					  output->compositor->read_format);
+
+	weston_output_update_capture_info(output,
+					  WESTON_OUTPUT_CAPTURE_SOURCE_FULL_FRAMEBUFFER,
+					  fb_size->width, fb_size->height,
+					  output->compositor->read_format);
 
 	return true;
 }
