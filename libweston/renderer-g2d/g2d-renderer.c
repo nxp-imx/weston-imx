@@ -96,6 +96,8 @@ typedef struct _g2dRECT
 
 struct g2d_output_state {
 	int current_buffer;
+	struct weston_size fb_size;
+	struct weston_geometry area;
 	pixman_region32_t buffer_damage[BUFFER_DAMAGE_COUNT];
 	struct g2d_surfaceEx *drm_hw_buffer;
 	int width;
@@ -1315,6 +1317,20 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 	gs->g2d_surface.base.format = g2dFormat;
 }
 
+static bool
+g2d_renderer_resize_output(struct weston_output *output,
+			  const struct weston_size *fb_size,
+			  const struct weston_geometry *area)
+{
+	struct g2d_output_state *go = get_output_state(output);
+
+	check_compositing_area(fb_size, area);
+
+	go->fb_size = *fb_size;
+	go->area = *area;
+
+	return true;
+}
 
 static void
 g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
@@ -1854,6 +1870,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.read_pixels = g2d_renderer_read_pixels;
 	gr->base.repaint_output = g2d_renderer_repaint_output;
 	gr->base.flush_damage = g2d_renderer_flush_damage;
+	gr->base.resize_output = g2d_renderer_resize_output;
 	gr->base.attach = g2d_renderer_attach;
 	gr->base.destroy = g2d_renderer_destroy;
 	gr->base.import_dmabuf = g2d_renderer_import_dmabuf;
@@ -2007,7 +2024,8 @@ g2d_renderer_get_surface_fence_fd(struct g2d_surfaceEx *buffer)
 }
 
 static int
-g2d_drm_renderer_output_create(struct weston_output *output)
+g2d_drm_renderer_output_create(struct weston_output *output,
+				 const struct g2d_renderer_output_options *options)
 {
 	struct g2d_output_state *go;
 	int i = 0;
@@ -2019,6 +2037,14 @@ g2d_drm_renderer_output_create(struct weston_output *output)
 
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)
 		pixman_region32_init(&go->buffer_damage[i]);
+
+	if (!g2d_renderer_resize_output(output, &options->fb_size, &options->area)) {
+		weston_log("Output %s failed to create 16F shadow.\n",
+			   output->name);
+		output->renderer_state = NULL;
+		free(go);
+		return -1;
+	}
 
 	return 0;
  }

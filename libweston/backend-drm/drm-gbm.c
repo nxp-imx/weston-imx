@@ -365,6 +365,7 @@ init_g2d(struct drm_backend *b)
 int
 drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 {
+	const struct weston_mode *mode = output->base.current_mode;
 	int w = output->base.current_mode->width;
 	int h = output->base.current_mode->height;
 	uint32_t format = output->format->format;
@@ -386,6 +387,17 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 			weston_log("Unsupported pixman format 0x%x\n", format);
 			return -1;
 	}
+
+	struct g2d_renderer_output_options options = {
+		.formats = output->format,
+		.formats_count = 1,
+		.area.x = 0,
+		.area.y = 0,
+		.area.width = mode->width,
+		.area.height = mode->height,
+		.fb_size.width = mode->width,
+		.fb_size.height = mode->height,
+	};
 
 	for (i = 0; i < ARRAY_LENGTH(output->dumb); i++) {
 		struct g2d_surfaceEx* g2dSurface = &(output->g2d_image[i]);
@@ -409,7 +421,7 @@ drm_output_init_g2d(struct drm_output *output, struct drm_backend *b)
 			goto err;
 	}
 
-	if (b->g2d_renderer->drm_output_create(&output->base) < 0)
+	if (b->g2d_renderer->drm_output_create(&output->base, &options) < 0)
 		goto err;
 
 	drm_output_init_cursor_egl(output, b);
