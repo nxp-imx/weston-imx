@@ -138,6 +138,7 @@ struct g2d_renderer {
 	PFNEGLQUERYDISPLAYATTRIBEXTPROC query_display_attrib;
 	PFNEGLQUERYDEVICESTRINGEXTPROC query_device_string;
 	bool has_device_query;
+	bool has_bind_display;
 
 	bool has_dmabuf_import_modifiers;
 	PFNEGLQUERYDMABUFFORMATSEXTPROC query_dmabuf_formats;
@@ -1788,6 +1789,91 @@ g2d_renderer_set_egl_device(struct g2d_renderer *gr)
 		weston_log("failed to query DRM device from EGL\n");
 }
 
+static int
+g2d_renderer_setup_egl_display(struct g2d_renderer *gr,
+			      void *native_window)
+{
+	gr->egl_display = NULL;
+
+	if(get_platform_display)
+		gr->egl_display = get_platform_display(EGL_PLATFORM_GBM_KHR,
+				native_window, NULL);
+
+	if (!gr->egl_display) {
+		weston_log("failed to create display\n");
+		return -1;
+	}
+
+	if (!eglInitialize(gr->egl_display, NULL, NULL)) {
+		weston_log("failed to initialize display\n");
+		return -1;
+	}
+
+	if (gr->has_device_query)
+		g2d_renderer_set_egl_device(gr);
+
+	return 0;
+}
+
+static int
+g2d_renderer_setup_egl_client_extensions(struct g2d_renderer *gr)
+{
+	const char *extensions;
+
+	extensions = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+	if (!extensions) {
+		weston_log("Retrieving EGL client extension string failed.\n");
+		return -1;
+	}
+
+	if (weston_check_egl_extension(extensions, "EGL_EXT_device_query")) {
+		gr->query_display_attrib =
+			(void *) eglGetProcAddress("eglQueryDisplayAttribEXT");
+		gr->query_device_string =
+			(void *) eglGetProcAddress("eglQueryDeviceStringEXT");
+		gr->has_device_query = true;
+	}
+
+	return 0;
+}
+
+static int
+g2d_renderer_setup_egl_extensions(struct g2d_renderer *gr)
+{
+	const char *extensions;
+	int ret;
+
+	extensions =
+		(const char *) eglQueryString(gr->egl_display, EGL_EXTENSIONS);
+	if (!extensions) {
+		weston_log("Retrieving EGL extension string failed.\n");
+		return -1;
+	}
+
+	if (weston_check_egl_extension(extensions, "EGL_WL_bind_wayland_display"))
+		gr->has_bind_display = true;
+	if (gr->has_bind_display) {
+		assert(gr->bind_display);
+		assert(gr->unbind_display);
+		assert(gr->query_buffer);
+		ret = gr->bind_display(gr->egl_display, gr->wl_display);
+		if (!ret)
+			gr->has_bind_display = false;
+	}
+
+	if (weston_check_egl_extension(extensions,
+				"EGL_EXT_image_dma_buf_import_modifiers")) {
+		gr->query_dmabuf_formats =
+			(void *) eglGetProcAddress("eglQueryDmaBufFormatsEXT");
+		gr->query_dmabuf_modifiers =
+			(void *) eglGetProcAddress("eglQueryDmaBufModifiersEXT");
+		assert(gr->query_dmabuf_formats);
+		assert(gr->query_dmabuf_modifiers);
+		gr->has_dmabuf_import_modifiers = true;
+	}
+
+	return 0;
+}
 
 static int
 create_default_dmabuf_feedback(struct weston_compositor *ec,
@@ -1890,7 +1976,6 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 {
 	struct g2d_renderer *gr;
 #ifdef ENABLE_EGL
-	const char *extensions;
 	int ret;
 #endif
 
@@ -1902,42 +1987,15 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 #ifdef ENABLE_EGL
 	gr = get_renderer(ec);
 	gr->wl_display = ec->wl_display;
-	if(get_platform_display)
-		gr->egl_display = get_platform_display(EGL_PLATFORM_GBM_KHR,
-				native_window, NULL);
-	if(gr->bind_display)
-		gr->bind_display(gr->egl_display, gr->wl_display);
 
-	eglInitialize(gr->egl_display, NULL, NULL);
+	if (g2d_renderer_setup_egl_client_extensions(gr) < 0)
+		goto fail;
 
-	extensions =
-		(const char *) eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
-	if (!extensions) {
-		weston_log("Retrieving EGL extension string failed.\n");
-		return -1;
-	}
+	if (g2d_renderer_setup_egl_display(gr, native_window) < 0)
+		goto fail;
 
-	if (weston_check_egl_extension(extensions, "EGL_EXT_device_query")) {
-		gr->query_display_attrib =
-			(void *) eglGetProcAddress("eglQueryDisplayAttribEXT");
-		gr->query_device_string =
-			(void *) eglGetProcAddress("eglQueryDeviceStringEXT");
-		gr->has_device_query = true;
-	}
-
-	if (gr->has_device_query)
-		g2d_renderer_set_egl_device(gr);
-
-	if (weston_check_egl_extension(extensions,
-				"EGL_EXT_image_dma_buf_import_modifiers")) {
-		gr->query_dmabuf_formats =
-			(void *) eglGetProcAddress("eglQueryDmaBufFormatsEXT");
-		gr->query_dmabuf_modifiers =
-			(void *) eglGetProcAddress("eglQueryDmaBufModifiersEXT");
-		assert(gr->query_dmabuf_formats);
-		assert(gr->query_dmabuf_modifiers);
-		gr->has_dmabuf_import_modifiers = true;
-	}
+	if (g2d_renderer_setup_egl_extensions(gr) < 0)
+		goto fail;
 
 	ret = populate_supported_formats(ec, &gr->supported_formats);
 	if (ret < 0)
@@ -1965,6 +2023,9 @@ fail_terminate:
 fail_feedback:
 	weston_dmabuf_feedback_format_table_destroy(ec->dmabuf_feedback_format_table);
 	ec->dmabuf_feedback_format_table = NULL;
+fail:
+	free(gr);
+	ec->renderer = NULL;
 
 	return -1;
 }
