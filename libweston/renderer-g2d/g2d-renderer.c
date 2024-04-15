@@ -108,6 +108,8 @@ struct g2d_output_state {
 
 struct g2d_surface_state {
 	float color[4];
+	bool solid_clear;
+	int clcolor;
 	struct weston_buffer_reference buffer_ref;
 	struct weston_buffer_release_reference buffer_release_ref;
 	int pitch; /* in pixels */
@@ -346,6 +348,22 @@ g2d_SetSurfaceRect(struct g2d_surfaceEx* g2dSurface, g2dRECT* rect)
 #define _hasAlpha(format) (format==G2D_RGBA8888 || format==G2D_BGRA8888 \
 	|| format==G2D_ARGB8888 || format==G2D_ABGR8888)
 
+
+static int
+g2d_clear_solid(void *handle, struct g2d_surfaceEx *dstG2dSurface, g2dRECT *clipRect, int clcolor)
+{
+	struct g2d_surfaceEx* soildSurface = dstG2dSurface;
+
+	g2d_SetSurfaceRect(soildSurface, clipRect);
+	soildSurface->base.clrcolor = clcolor;
+
+	if(g2d_clear(handle,  &soildSurface->base)){
+		printG2dSurfaceInfo(dstG2dSurface, "SOILD DST:");
+		return -1;
+	}
+	return 0;
+}
+
 static int
 g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_surfaceEx *dstG2dSurface,
 	g2dRECT *srcRect, g2dRECT *dstRect)
@@ -558,6 +576,7 @@ repaint_region(struct weston_paint_node *pnode,
 {
 	struct g2d_renderer *gr = get_renderer(pnode->surface->compositor);
 	struct g2d_surface_state *gs = get_surface_state(pnode->surface);
+	struct weston_buffer *buffer = gs->buffer_ref.buffer;
 
 	pixman_box32_t *rects, *bb_rects;
 	int i, j, k, n, nrects, positions_size, nbb, cnt = 0;
@@ -583,8 +602,10 @@ repaint_region(struct weston_paint_node *pnode,
 		return;
 	}
 
-	if (srcsurface.base.width <= 0 || srcsurface.base.height <= 0) {
-		return;
+	if (!gs->solid_clear) {
+		if (srcsurface.base.width <= 0 || srcsurface.base.height <= 0) {
+			return;
+		}
 	}
 
 	bb_rects = pixman_region32_rectangles(&pnode->view->transform.boundingbox, &nbb);
@@ -702,7 +723,17 @@ repaint_region(struct weston_paint_node *pnode,
 				return;
 			}
 			g2d_set_clipping(gr->handle, clipRect.left, clipRect.top, clipRect.right, clipRect.bottom);
-			g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
+			/* g2d_clear can't clear the sloid buffer with alpha.*/
+			if (gs->solid_clear &&
+			    buffer->type == WESTON_BUFFER_SOLID &&
+			    buffer->pixel_format->format !=DRM_FORMAT_ARGB8888) {
+				g2d_clear_solid(gr->handle, dstsurface, &clipRect, gs->clcolor);
+			}
+			else
+			{
+				g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
+			}
+
 		}
 	}
 
@@ -1337,6 +1368,24 @@ done:
 	weston_buffer_release_reference(&gs->buffer_release_ref, NULL);
 }
 
+static uint32_t
+pack_color(const uint32_t format, float *c)
+{
+	uint8_t r = round(c[0] * 255.0f);
+	uint8_t g = round(c[1] * 255.0f);
+	uint8_t b = round(c[2] * 255.0f);
+	uint8_t a = round(c[3] * 255.0f);
+
+	switch (format) {
+	case DRM_FORMAT_ARGB8888:
+	case DRM_FORMAT_XRGB8888:
+		return (a << 24) | (b << 16) | (g << 8) | r;
+	default:
+		assert(0);
+		return 0;
+	}
+}
+
 static void
 g2d_renderer_attach_solid(struct weston_surface *surface,
 			struct weston_buffer *buffer)
@@ -1347,6 +1396,8 @@ g2d_renderer_attach_solid(struct weston_surface *surface,
 	gs->color[1] = buffer->solid.g;
 	gs->color[2] = buffer->solid.b;
 	gs->color[3] = buffer->solid.a;
+	gs->solid_clear = true;
+	gs->clcolor = pack_color(buffer->pixel_format->format, gs->color);
 }
 
 static void
@@ -1740,6 +1791,7 @@ g2d_renderer_attach(struct weston_paint_node *pnode)
 	struct weston_surface *es = pnode->surface;
 	struct weston_buffer *buffer = es->buffer_ref.buffer;
 	struct g2d_surface_state *gs = get_surface_state(es);
+	gs->solid_clear = false;
 
 	if (!buffer) {
 		gs->attached = 0;
