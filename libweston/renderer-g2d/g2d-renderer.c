@@ -158,6 +158,7 @@ struct g2d_renderer {
 	PFNEGLQUERYDISPLAYATTRIBEXTPROC query_display_attrib;
 	PFNEGLQUERYDEVICESTRINGEXTPROC query_device_string;
 	bool has_device_query;
+	bool has_bind_display;
 
 	bool has_dmabuf_import_modifiers;
 	PFNEGLQUERYDMABUFFORMATSEXTPROC query_dmabuf_formats;
@@ -2049,6 +2050,7 @@ static int
 g2d_renderer_setup_egl_extensions(struct g2d_renderer *gr)
 {
 	const char *extensions;
+	int ret;
 
 	extensions =
 		(const char *) eglQueryString(gr->egl_display, EGL_EXTENSIONS);
@@ -2057,8 +2059,16 @@ g2d_renderer_setup_egl_extensions(struct g2d_renderer *gr)
 		return -1;
 	}
 
-	if(gr->bind_display)
-		gr->bind_display(gr->egl_display, gr->wl_display);
+	if (weston_check_egl_extension(extensions, "EGL_WL_bind_wayland_display"))
+		gr->has_bind_display = true;
+	if (gr->has_bind_display) {
+		assert(gr->bind_display);
+		assert(gr->unbind_display);
+		assert(gr->query_buffer);
+		ret = gr->bind_display(gr->egl_display, gr->wl_display);
+		if (!ret)
+			gr->has_bind_display = false;
+	}
 
 	if (weston_check_egl_extension(extensions,
 				"EGL_EXT_image_dma_buf_import_modifiers")) {
