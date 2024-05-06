@@ -1771,10 +1771,16 @@ populate_supported_formats(struct weston_compositor *ec,
 			/* Skip MOD_INVALID, as it has already been added. */
 			if (modifiers[j] == DRM_FORMAT_MOD_INVALID)
 				continue;
-			ret = weston_drm_format_add_modifier(fmt, modifiers[j]);
-			if (ret < 0) {
-				free(modifiers);
-				goto out;
+			/* Only add 2D supported modifiers. */
+			if (modifiers[j] == DRM_FORMAT_MOD_LINEAR ||
+			    modifiers[j] == DRM_FORMAT_MOD_AMPHION_TILED ||
+			    modifiers[j] == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED ||
+			    modifiers[j] == DRM_FORMAT_MOD_VIVANTE_SPLIT_SUPER_TILED) {
+				ret = weston_drm_format_add_modifier(fmt, modifiers[j]);
+				if (ret < 0) {
+					free(modifiers);
+					goto out;
+				}
 			}
 		}
 		free(modifiers);
