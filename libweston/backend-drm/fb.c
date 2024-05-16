@@ -563,7 +563,16 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_device *device,
 	if (fb) {
 		assert(fb->type == type);
 
-		return drm_fb_ref(fb);
+		bool is_fb_opaque = (!fb->format->opaque_substitute);
+
+		/* If fb->format doesn't meet the opaque requirement and there is
+		 * no reference being taken for this fb, we will convert the fb
+		 * format to a suitable format. */
+		if ((is_opaque != is_fb_opaque) && (fb->refcnt == 0) &&
+		    (fb->fb_id != 0))
+			drm_fb_destroy(fb);
+		else
+			return drm_fb_ref(fb);
 	}
 
 	fb = zalloc(sizeof *fb);
