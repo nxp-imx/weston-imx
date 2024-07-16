@@ -839,12 +839,12 @@ shared_output_repainted(struct wl_listener *listener, void *data)
 		so->output->compositor->read_format;
 	const pixman_format_code_t pixman_format = read_format->pixman_format;
 
-	uint32_t use_g2d;
+	bool use_g2d;
 
 	config = wet_get_config(so->output->compositor);
 	section = weston_config_get_section(config, "core", NULL, NULL);
 
-	weston_config_section_get_uint(section, "use-g2d", &use_g2d, 0);
+	weston_config_section_get_bool(section, "use-g2d", &use_g2d, false);
 
 	width = so->output->current_mode->width;
 	height = so->output->current_mode->height;
