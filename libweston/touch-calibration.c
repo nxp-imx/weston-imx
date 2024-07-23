@@ -209,6 +209,8 @@ map_calibrator(struct weston_touch_calibrator *calibrator)
 	weston_surface_map(calibrator->surface);
 
 	weston_output_schedule_repaint(calibrator->output);
+	weston_view_geometry_dirty(calibrator->view);
+	weston_view_update_transform(calibrator->view);
 
 	device->ops->get_calibration(device, &device->saved_calibration);
 	device->ops->set_calibration(device, &identity);
