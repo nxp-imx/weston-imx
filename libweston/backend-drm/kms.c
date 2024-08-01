@@ -1809,6 +1809,11 @@ atomic_flip_handler(int fd, unsigned int frame, unsigned int sec,
 	if (!output || !output->base.enabled)
 		return;
 
+	if (!output->atomic_complete_pending) {
+		drm_debug(b, "[atomic][CRTC:%u] ignore flip complete event\n", crtc_id);
+		return;
+	}
+
 	drm_output_update_msc(output, frame);
 
 	if (output->state_cur->tear) {
