@@ -79,13 +79,18 @@ drm_mixed_mode_check_underlay(enum drm_output_propose_state_mode mode,
 
 static bool
 drm_output_check_plane_has_view_assigned(struct drm_plane *plane,
-                                         struct drm_output_state *output_state)
+                                         struct drm_pending_state *pending_state)
 {
 	struct drm_plane_state *ps;
-	wl_list_for_each(ps, &output_state->plane_list, link) {
-		if (ps->plane == plane && ps->fb)
-			return true;
+	struct drm_output_state *output_state;
+
+	wl_list_for_each(output_state, &pending_state->output_list, link) {
+		wl_list_for_each(ps, &output_state->plane_list, link) {
+			if (ps->plane == plane && ps->fb)
+				return true;
+		}
 	}
+
 	return false;
 }
 
@@ -541,6 +546,7 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 	struct drm_output *output = state->output;
 	struct drm_device *device = output->device;
 	struct drm_backend *b = device->backend;
+	struct drm_pending_state *pending_state = device->repaint_data;
 
 	struct drm_plane_state *ps = NULL;
 	struct drm_plane *plane;
@@ -628,7 +634,7 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 
 		scanout_has_view_assigned =
 			drm_output_check_plane_has_view_assigned(output->scanout_plane,
-								 state);
+								 pending_state);
 		view_matches_entire_output =
 			view_with_region_matches_output_entirely(pnode,
 								 background_region,
@@ -680,7 +686,7 @@ drm_output_find_plane_for_view(struct drm_output_state *state,
 		if (!drm_plane_is_available(plane, output))
 			continue;
 
-		if (drm_output_check_plane_has_view_assigned(plane, state)) {
+		if (drm_output_check_plane_has_view_assigned(plane, pending_state)) {
 			drm_debug(b, "\t\t\t\t[plane] not trying plane %d: "
 				     "another view already assigned\n",
 				     plane->plane_id);
