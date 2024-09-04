@@ -786,8 +786,7 @@ fbdev_output_destroy(struct weston_output *base)
 	fbdev_output_disable(base);
 
 	if (backend->use_pixman) {
-		if (base->renderer_state != NULL)
-			pixman_renderer_output_destroy(base);
+		goto out;
 #if defined(ENABLE_IMXGPU)
 #if defined(ENABLE_IMXG2D)
 	} else if (backend->use_g2d) {
@@ -800,6 +799,7 @@ fbdev_output_destroy(struct weston_output *base)
 #endif
 	}
 
+out:
 	/* Remove the output. */
 	weston_output_release(&output->base);
 
