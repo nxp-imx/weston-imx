@@ -2116,7 +2116,7 @@ g2d_renderer_destroy(struct weston_compositor *ec)
 	g2d_close(gr->handle);
 #ifdef ENABLE_EGL
 	if(gr->bind_display)
-		gr->bind_display(gr->egl_display, gr->wl_display);
+		gr->unbind_display(gr->egl_display, gr->wl_display);
 	eglTerminate(gr->egl_display);
 #endif
 	free(ec->renderer);
