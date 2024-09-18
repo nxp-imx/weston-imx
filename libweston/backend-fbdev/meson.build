@@ -25,6 +25,7 @@ if get_option('imxgpu')
 		error('fbdev-backend with i.MX GPU requires egl which was not found.')
 	endif
 	deps_fbdev += dep_egl
+	config_h.set('EGL_API_FB', '1')
 endif
 
 plugin_fbdev = shared_library(
