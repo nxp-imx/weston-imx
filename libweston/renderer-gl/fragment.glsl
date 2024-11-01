@@ -346,6 +346,8 @@ sample_powlin_vec3(float params[MAX_CURVESET_PARAMS], bool must_clamp,
 vec3
 color_pre_curve(vec3 color)
 {
+	vec3 ret;
+
 	if (c_color_pre_curve == SHADER_COLOR_CURVE_IDENTITY) {
 		return color;
 	} else if (c_color_pre_curve == SHADER_COLOR_CURVE_LUT_3x1D) {
@@ -353,13 +355,15 @@ color_pre_curve(vec3 color)
 				       color_pre_curve_lut_scale_offset,
 				       color);
 	} else if (c_color_pre_curve == SHADER_COLOR_CURVE_LINPOW) {
-		return sample_linpow_vec3(color_pre_curve_params,
-					  color_pre_curve_clamped_input,
-					  color);
+		ret.r = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.r, 0);
+		ret.g = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.g, 1);
+		ret.b = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.b, 2);
+		return ret;
 	} else if (c_color_pre_curve == SHADER_COLOR_CURVE_POWLIN) {
-		return sample_powlin_vec3(color_pre_curve_params,
-					  color_pre_curve_clamped_input,
-					  color);
+		ret.r = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.r, 0);
+		ret.g = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.g, 1);
+		ret.b = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.b, 2);
+		return ret;
 	} else {
 		/* Never reached, bad c_color_pre_curve. */
 		return vec3(1.0, 0.3, 1.0);
@@ -393,6 +397,8 @@ color_mapping(vec3 color)
 vec3
 color_post_curve(vec3 color)
 {
+	vec3 ret;
+
 	if (c_color_post_curve == SHADER_COLOR_CURVE_IDENTITY) {
 		return color;
 	} else if (c_color_post_curve == SHADER_COLOR_CURVE_LUT_3x1D) {
@@ -400,13 +406,15 @@ color_post_curve(vec3 color)
 				       color_post_curve_lut_scale_offset,
 				       color);
 	} else if (c_color_post_curve == SHADER_COLOR_CURVE_LINPOW) {
-		return sample_linpow_vec3(color_post_curve_params,
-					  color_post_curve_clamped_input,
-					  color);
+		ret.r = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.r, 0);
+		ret.g = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.g, 1);
+		ret.b = sample_linpow(color_pre_curve_params, color_pre_curve_clamped_input, color.b, 2);
+		return ret;
 	} else if (c_color_post_curve == SHADER_COLOR_CURVE_POWLIN) {
-		return sample_powlin_vec3(color_post_curve_params,
-					  color_post_curve_clamped_input,
-					  color);
+		ret.r = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.r, 0);
+		ret.g = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.g, 1);
+		ret.b = sample_powlin(color_pre_curve_params, color_pre_curve_clamped_input, color.b, 2);
+		return ret;
 	} else {
 		/* Never reached, bad c_color_post_curve. */
 		return vec3(1.0, 0.3, 1.0);
