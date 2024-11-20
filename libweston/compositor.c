@@ -3829,14 +3829,6 @@ weston_output_repaint(struct weston_output *output, struct timespec *now)
 		if (pnode->surface->output != output)
 			continue;
 
-		/*
-		 * avoid adding pnode's frame callbacks/presented
-		 * feedback to the respective lists if pnode/surface is
-		 * occluded
-		 */
-		if (!pixman_region32_not_empty(&pnode->visible))
-			continue;
-
 		wl_list_insert_list(&frame_callback_list,
 				    &pnode->surface->frame_callback_list);
 		wl_list_init(&pnode->surface->frame_callback_list);
