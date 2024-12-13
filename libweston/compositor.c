@@ -3327,10 +3327,12 @@ weston_surface_attach(struct weston_surface *surface,
 	weston_buffer_reference(&surface->buffer_ref, buffer,
 				BUFFER_MAY_BE_ACCESSED);
 
-	wl_list_for_each(pnode, &surface->paint_node_list, surface_link) {
-		assert(pnode->surface == surface);
-		surface->compositor->renderer->attach(pnode);
-		break;
+	if (buffer->type == WESTON_BUFFER_RENDERER_OPAQUE) {
+		wl_list_for_each(pnode, &surface->paint_node_list, surface_link) {
+			assert(pnode->surface == surface);
+			surface->compositor->renderer->attach(pnode);
+			break;
+		}
 	}
 
 	return status;
