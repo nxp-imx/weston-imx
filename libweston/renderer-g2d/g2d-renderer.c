@@ -2350,7 +2350,6 @@ g2d_renderer_create(struct weston_compositor *ec)
 	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP, &g2d_hardware_available);
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
-	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGR565);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YVU420);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV12);
@@ -2360,6 +2359,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_UYVY);
 	if(g2d_hardware_available != 1)
 	{
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGR565);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XBGR8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRX8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBX8888);
