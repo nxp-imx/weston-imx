@@ -4072,6 +4072,9 @@ drm_import_dmabuf(struct weston_compositor *compositor,
 	uint64_t has_prime;
 	int ret;
 
+	if (!dmabuf)
+		return false;
+
 	ret = drmGetCap (b->drm->drm.fd, DRM_CAP_PRIME, &has_prime);
 	if (ret || !(bool) (has_prime & DRM_PRIME_CAP_IMPORT)) {
 	        weston_log("drm backend not support import DMABUF\n");
