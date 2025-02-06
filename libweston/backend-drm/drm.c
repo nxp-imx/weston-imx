@@ -73,6 +73,7 @@
 #include "hdr10-metadata-unstable-v1-server-protocol.h"
 
 static const char default_seat[] = "seat0";
+#define MAX_OVERLAY_NUM 2
 
 static void
 drm_backend_create_faked_zpos(struct drm_device *device)
@@ -1181,7 +1182,7 @@ init_pixman(struct drm_backend *b)
  * @param kplane DRM plane to create
  */
 static struct drm_plane *
-drm_plane_create(struct drm_device *device, const drmModePlane *kplane)
+drm_plane_create(struct drm_device *device, const drmModePlane *kplane, int *count_overlay)
 {
 	struct drm_backend *b = device->backend;
 	struct weston_compositor *compositor = b->compositor;
@@ -1219,6 +1220,11 @@ drm_plane_create(struct drm_device *device, const drmModePlane *kplane)
 		drm_property_get_value(&plane->props[WDRM_PLANE_TYPE],
 				       props,
 				       WDRM_PLANE_TYPE__COUNT);
+
+	if (plane->type == WDRM_PLANE_TYPE_OVERLAY && ++(*count_overlay) > MAX_OVERLAY_NUM) {
+		drmModeFreeObjectProperties(props);
+		goto err;
+	}
 
 	zpos_range_values =
 		drm_property_get_range_values(&plane->props[WDRM_PLANE_ZPOS],
@@ -1375,6 +1381,7 @@ create_sprites(struct drm_device *device)
 	drmModePlane *kplane;
 	struct drm_plane *drm_plane;
 	uint32_t i;
+	int count_overlay = 0;
 	uint32_t next_plane_idx = 0;
 	uint64_t primary_plane_zpos_min = DRM_PLANE_ZPOS_INVALID_PLANE;
 	kplane_res = drmModeGetPlaneResources(device->drm.fd);
@@ -1390,7 +1397,7 @@ create_sprites(struct drm_device *device)
 		if (!kplane)
 			continue;
 
-		drm_plane = drm_plane_create(device, kplane);
+		drm_plane = drm_plane_create(device, kplane, &count_overlay);
 		drmModeFreePlane(kplane);
 		if (!drm_plane)
 			continue;
