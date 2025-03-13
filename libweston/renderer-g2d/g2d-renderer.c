@@ -1321,7 +1321,13 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 
 	switch (wl_shm_buffer_get_format(buffer->shm_buffer)) {
 		case WL_SHM_FORMAT_XRGB8888:
+		case WL_SHM_FORMAT_XBGR8888:
 		case WL_SHM_FORMAT_ARGB8888:
+		case WL_SHM_FORMAT_ABGR8888:
+		case WL_SHM_FORMAT_BGRX8888:
+		case WL_SHM_FORMAT_BGRA8888:
+		case WL_SHM_FORMAT_RGBA8888:
+		case WL_SHM_FORMAT_RGBX8888:
 		case WL_SHM_FORMAT_RGB565:
 			n_planes = 1;
 			height = buffer->height;
@@ -1332,7 +1338,22 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 			height = ALIGN_TO_16(buffer->height);
 			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
 			break;
+		case WL_SHM_FORMAT_UYVY:
+			n_planes = 1;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			break;
 		case WL_SHM_FORMAT_NV12:
+			n_planes = 2;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			plane_size[1] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height / 2;
+			src_plane_offset[1] = plane_size[0];
+			dst_plane_offset[1] = alignedWidth * height;
+			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
+			uv_dst_stride = alignedWidth;
+			break;
+		case WL_SHM_FORMAT_NV21:
 			n_planes = 2;
 			height = ALIGN_TO_16(buffer->height);
 			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
@@ -1763,13 +1784,12 @@ g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 			int **formats, int *num_formats)
 {
 	struct g2d_renderer *gr = get_renderer(wc);
-	int g2d_hardware_available = 0;
+	int hardware_v1_available, hardware_v2_available, g2d_offset = 0;
 	int num;
 	static const int dma_formats[] = {
 		DRM_FORMAT_ARGB8888,
 		DRM_FORMAT_XRGB8888,
 		DRM_FORMAT_RGB565,
-		DRM_FORMAT_BGR565,
 		DRM_FORMAT_YUYV,
 		DRM_FORMAT_UYVY,
 		DRM_FORMAT_NV12,
@@ -1785,8 +1805,16 @@ g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 		DRM_FORMAT_RGBX8888,
 	};
 
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP, &g2d_hardware_available);
-	num = (g2d_hardware_available == 1) ? 11 : ARRAY_LENGTH(dma_formats);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
+	if(hardware_v1_available == 1) {
+		g2d_offset = 6;
+	}
+	else if(hardware_v2_available == 1) {
+		g2d_offset = 2;
+	}
+
+	num = ARRAY_LENGTH(dma_formats) - g2d_offset;
 	*formats = calloc(num, sizeof(int));
 	memcpy(*formats, dma_formats, num * sizeof(int));
 
@@ -2296,7 +2324,7 @@ static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
-	int g2d_hardware_available = 0;
+	int hardware_v1_available, hardware_v2_available = 0;
 
 	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
@@ -2346,17 +2374,17 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->capabilities |= WESTON_CAP_CAPTURE_YFLIP;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
 
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP, &g2d_hardware_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
 
 	/* Configure read format to PIXMAN_x8r8g8b8 for pxp device */
-	if (g2d_hardware_available == 1) {
+	if (hardware_v1_available == 1) {
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_x8r8g8b8);
 	} else {
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
 	}
 
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGB565);
-	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGR565);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUV420);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YVU420);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV12);
@@ -2364,14 +2392,15 @@ g2d_renderer_create(struct weston_compositor *ec)
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV21);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_UYVY);
-	if(g2d_hardware_available != 1)
-	{
-		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XBGR8888);
+	if(hardware_v1_available != 1 && hardware_v2_available != 1) {
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRX8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBX8888);
-		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_ABGR8888);
+	}
+	if(hardware_v1_available != 1) {
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRA8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBA8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_ABGR8888);
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XBGR8888);
 	}
 
 	wl_signal_init(&gr->destroy_signal);
