@@ -1152,19 +1152,20 @@ output_rotate_damage(struct weston_output *output,
 
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 static void
-g2d_update_buffer_release_fences(struct weston_compositor *compositor,
+g2d_update_buffer_release_fences(struct weston_output *output,
 			     int fence_fd)
 {
-	struct weston_view *view;
+	struct weston_paint_node *pnode;
 
-	wl_list_for_each_reverse(view, &compositor->view_list, link) {
+	wl_list_for_each_reverse(pnode, &output->paint_node_z_order_list,
+			 z_order_link) {
 		struct g2d_surface_state *gs;
 		struct weston_buffer_release *buffer_release;
 
-		if (view->plane != &compositor->primary_plane)
+		if (pnode->plane != &output->primary_plane)
 			continue;
 
-		gs = get_surface_state(view->surface);
+		gs = get_surface_state(pnode->surface);
 		buffer_release = gs->buffer_release_ref.buffer_release;
 
 		if(!buffer_release) {
@@ -1218,7 +1219,7 @@ g2d_renderer_repaint_output(struct weston_output *output,
 
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	fence_fd = g2d_create_fence_fd(gr->handle);
-	g2d_update_buffer_release_fences(compositor, fence_fd);
+	g2d_update_buffer_release_fences(output, fence_fd);
 
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
 	go->drm_hw_buffer->reserved[0] = fence_fd;

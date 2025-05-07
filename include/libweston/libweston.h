@@ -1541,7 +1541,6 @@ struct weston_compositor {
 	const struct weston_pointer_grab_interface *default_pointer_grab;
 
 	/* Repaint state. */
-	struct weston_plane primary_plane;
 	uint32_t capabilities; /* combination of enum weston_capability */
 
 	struct weston_color_manager *color_manager;
@@ -1771,7 +1770,6 @@ struct weston_view {
 
 	struct wl_list link;             /* weston_compositor::view_list */
 	struct weston_layer_entry layer_link; /* part of geometry */
-	struct weston_plane *plane;
 
 	/* For weston_layer inheritance from another view */
 	struct weston_view *parent_view;
