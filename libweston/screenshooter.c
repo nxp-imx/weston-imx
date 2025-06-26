@@ -343,7 +343,7 @@ weston_recorder_frame_notify(struct wl_listener *listener, void *data)
 		width = r[i].x2 - r[i].x1;
 		height = r[i].y2 - r[i].y1;
 
-		if (do_yflip)
+		if (do_yflip && compositor->renderer->type != WESTON_RENDERER_G2D)
 			y_orig = output->current_mode->height - r[i].y2;
 		else
 			y_orig = r[i].y1;
