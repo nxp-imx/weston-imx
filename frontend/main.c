@@ -3422,8 +3422,8 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 				       false);
 
 #if defined(ENABLE_IMXG2D)
-	weston_config_section_get_bool(section, "use-g2d", &config.use_g2d,
-				       use_g2d);
+	weston_config_section_get_bool(section, "use-g2d", &use_g2d,
+				       false);
 #endif
 
 	const struct weston_option options[] = {
@@ -3433,7 +3433,7 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 		{ WESTON_OPTION_BOOLEAN, "current-mode", 0, &wet->drm_use_current_mode },
 		{ WESTON_OPTION_BOOLEAN, "use-pixman", 0, &force_pixman },
 #if defined(ENABLE_IMXG2D)
-		{ WESTON_OPTION_BOOLEAN, "use-g2d", 0, &config.use_g2d },
+		{ WESTON_OPTION_BOOLEAN, "use-g2d", 0, &use_g2d },
 #endif
 		{ WESTON_OPTION_BOOLEAN, "continue-without-input", false, &without_input }
 	};
@@ -3446,7 +3446,7 @@ load_drm_backend(struct weston_compositor *c, int *argc, char **argv,
 	} else if (force_pixman) {
 		config.renderer = WESTON_RENDERER_PIXMAN;
 #if defined(ENABLE_IMXG2D)
-	}else if (config.use_g2d) {
+	} else if (use_g2d) {
 		config.renderer = WESTON_RENDERER_G2D;
 #endif
 	} else {

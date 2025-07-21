@@ -204,11 +204,6 @@ struct weston_drm_backend_config {
 	/** Select the renderer type to use */
 	enum weston_renderer_type renderer;
 
-#if defined(ENABLE_IMXG2D)
-	/** Whether to use the g2d renderer instead of the OpenGL ES renderer. */
-	bool use_g2d;
-#endif
-
 	bool enable_overlay_view;
 
 	/** The seat to be used for input and output.

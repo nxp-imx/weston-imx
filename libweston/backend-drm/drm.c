@@ -448,7 +448,7 @@ drm_output_render(struct drm_output_state *state)
 		fb = drm_output_render_pixman(state, &damage);
 	}
 #if defined(ENABLE_IMXG2D)
-	else if (b->use_g2d) {
+	else if (c->renderer->type == WESTON_RENDERER_G2D) {
 		fb = drm_output_render_g2d(state, &damage);
 	}
 #endif
@@ -1132,7 +1132,7 @@ drm_output_apply_mode(struct drm_output *output)
 			return -1;
 		}
 #if defined(ENABLE_IMXG2D)
-	} else if (b->use_g2d) {
+	} else if (b->compositor->renderer->type == WESTON_RENDERER_G2D) {
 		drm_output_fini_g2d(output);
 		if (drm_output_init_g2d(output, b) < 0) {
 			weston_log("failed to init output g2d state with "
@@ -2395,7 +2395,7 @@ drm_output_enable(struct weston_output *base)
 			goto err_planes;
 		}
 #if defined(ENABLE_IMXG2D)
-	} else if (b->use_g2d) {
+	} else if (b->compositor->renderer->type == WESTON_RENDERER_G2D) {
 		if (drm_output_init_g2d(output, b) < 0) {
 			weston_log("Failed to init output g2d state\n");
 			goto err_planes;
@@ -2452,7 +2452,7 @@ drm_output_deinit(struct weston_output *base)
 	if (b->compositor->renderer->type == WESTON_RENDERER_PIXMAN)
 		drm_output_fini_pixman(output);
 #if defined(ENABLE_IMXG2D)
-	else if (b->use_g2d)
+	else if (b->compositor->renderer->type == WESTON_RENDERER_G2D)
 		drm_output_fini_g2d(output);
 #endif
 	else
@@ -4247,9 +4247,6 @@ drm_backend_create(struct weston_compositor *compositor,
 	wl_list_init(&b->kms_list);
 
 	b->compositor = compositor;
-#if defined(ENABLE_IMXG2D)
-	b->use_g2d = config->use_g2d;
-#endif
 	b->enable_overlay_view = config->enable_overlay_view;
 	b->shell_width = config->shell_width;
 	b->shell_height = config->shell_height;
@@ -4308,10 +4305,6 @@ drm_backend_create(struct weston_compositor *compositor,
 		config->renderer = WESTON_RENDERER_GL;
 #else
 		config->renderer = WESTON_RENDERER_PIXMAN;
-#endif
-#if defined(ENABLE_IMXG2D)
-	if (b->use_g2d)
-		config->renderer = WESTON_RENDERER_G2D;
 #endif
 	}
 
@@ -4539,9 +4532,7 @@ config_init_to_defaults(struct weston_drm_backend_config *config)
 	config->use_pixman_shadow = true;
 #if defined(ENABLE_IMXG2D)
 #if !defined(BUILD_DRM_GBM)
-	config->use_g2d = true;
-#else
-	config->use_g2d = false;
+	config->renderer = WESTON_RENDERER_G2D;
 #endif
 #endif
 	config->shell_width = 0;

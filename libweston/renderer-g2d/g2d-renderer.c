@@ -2412,7 +2412,7 @@ g2d_renderer_create(struct weston_compositor *ec)
 }
 
 static int
-g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
+g2d_renderer_display_create(struct weston_compositor *ec, const struct g2d_renderer_display_options *options)
 {
 	struct g2d_renderer *gr;
 #ifdef ENABLE_EGL
@@ -2431,7 +2431,7 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 	if (g2d_renderer_setup_egl_client_extensions(gr) < 0)
 		goto fail;
 
-	if (g2d_renderer_setup_egl_display(gr, native_window) < 0)
+	if (g2d_renderer_setup_egl_display(gr, options->native_window) < 0)
 		goto fail;
 
 	if (g2d_renderer_setup_egl_extensions(gr) < 0)
@@ -2454,10 +2454,6 @@ g2d_drm_display_create(struct weston_compositor *ec, void *native_window)
 	}
 #endif
 	gr->use_drm = 1;
-
-	if (linux_dmabuf_setup(ec) < 0)
-		weston_log("Error: initializing dmabuf "
-			   "support failed.\n");
 
 	return 0;
 
@@ -2488,7 +2484,7 @@ g2d_renderer_get_surface_fence_fd(struct g2d_surfaceEx *buffer)
 }
 
 static int
-g2d_drm_renderer_output_create(struct weston_output *output,
+g2d_renderer_output_create(struct weston_output *output,
 				 const struct g2d_renderer_output_options *options)
 {
 	struct g2d_output_state *go;
@@ -2514,7 +2510,7 @@ g2d_drm_renderer_output_create(struct weston_output *output,
  }
 
 static int
-drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
+g2d_renderer_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 				enum g2d_format g2dFormat,
 				void *vaddr,
 				int w, int h, int stride,
@@ -2548,9 +2544,9 @@ drm_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 
  WL_EXPORT struct g2d_renderer_interface g2d_renderer_interface = {
 	.create = g2d_renderer_create,
-	.drm_display_create  = g2d_drm_display_create,
-	.drm_output_create   = g2d_drm_renderer_output_create,
-	.create_g2d_image    = drm_create_g2d_image,
+	.display_create  = g2d_renderer_display_create,
+	.output_create   = g2d_renderer_output_create,
+	.create_g2d_image    = g2d_renderer_create_g2d_image,
 	.output_set_buffer   = g2d_renderer_output_set_buffer,
 	.output_destroy      = g2d_renderer_output_destroy,
 	.get_surface_fence_fd = g2d_renderer_get_surface_fence_fd,

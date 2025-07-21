@@ -86,6 +86,9 @@
 #include "output-capture.h"
 #include "pixman-renderer.h"
 #include "renderer-gl/gl-renderer.h"
+#if defined(ENABLE_IMXG2D)
+#include "renderer-g2d/g2d-renderer.h"
+#endif
 
 #include "weston-log-internal.h"
 
@@ -10258,6 +10261,10 @@ weston_compositor_init_renderer(struct weston_compositor *compositor,
 {
 	const struct gl_renderer_interface *gl_renderer;
 	const struct gl_renderer_display_options *gl_options;
+#if defined(ENABLE_IMXG2D)
+	const struct g2d_renderer_interface *g2d_renderer;
+	const struct g2d_renderer_display_options *g2d_options;
+#endif
 	int ret;
 
 	switch (renderer_type) {
@@ -10284,6 +10291,26 @@ weston_compositor_init_renderer(struct weston_compositor *compositor,
 			return ret;
 		weston_log("Using Pixman renderer\n");
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		g2d_renderer = weston_load_module("g2d-renderer.so",
+						 "g2d_renderer_interface",
+						 LIBWESTON_MODULEDIR);
+
+		if (!g2d_renderer)
+			return -1;
+
+		g2d_options = container_of(options,
+					  struct g2d_renderer_display_options,
+					  base);
+		ret = g2d_renderer->display_create(compositor, g2d_options);
+		if (ret < 0)
+			return ret;
+
+		compositor->renderer->g2d = g2d_renderer;
+		weston_log("Using G2D renderer\n");
+		break;
+#endif
 	default:
 		ret = -1;
 	}

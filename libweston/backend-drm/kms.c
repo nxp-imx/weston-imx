@@ -1243,8 +1243,10 @@ drm_output_apply_state_atomic(struct drm_output_state *state,
 			in_fence_fd = output->surface_get_in_fence_fd(output->gbm_surface);
 	}
 #if defined(ENABLE_IMXG2D)
-	else if(b->use_g2d && b->g2d_renderer) {
-		in_fence_fd = b->g2d_renderer->get_surface_fence_fd(&output->g2d_image[output->current_image]);
+	else if (b->compositor->renderer->type == WESTON_RENDERER_G2D) {
+		struct weston_renderer *renderer = b->compositor->renderer;
+		if (renderer->g2d)
+			in_fence_fd = renderer->g2d->get_surface_fence_fd(&output->g2d_image[output->current_image]);
 	}
 #endif
 

@@ -261,11 +261,6 @@ struct drm_backend {
 	struct wl_listener session_listener;
 	const struct pixel_format_info *format;
 
-#if defined(ENABLE_IMXG2D)
-	bool use_g2d;
-	struct g2d_renderer_interface *g2d_renderer;;
-#endif
-
 	bool use_pixman_shadow;
 
 	bool enable_overlay_view;

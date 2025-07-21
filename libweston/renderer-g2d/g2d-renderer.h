@@ -50,6 +50,11 @@
 #include <EGL/eglext.h>
 #endif
 
+struct g2d_renderer_display_options {
+	struct weston_renderer_options base;
+	void * native_window;
+};
+
 struct g2d_renderer_output_options {
 	struct weston_size fb_size;
 	struct weston_geometry area;
@@ -60,9 +65,10 @@ struct g2d_renderer_output_options {
 struct g2d_renderer_interface {
 	int (*create)(struct weston_compositor *ec);
 
-	int (*drm_display_create)(struct weston_compositor *ec, void *native_window);
+	int (*display_create)(struct weston_compositor *ec,
+				const struct g2d_renderer_display_options *options);
 
-	int (*drm_output_create)(struct weston_output *output,
+	int (*output_create)(struct weston_output *output,
 				const struct g2d_renderer_output_options *options);
 
 	int (*create_g2d_image)(struct g2d_surfaceEx* g2dSurface,
