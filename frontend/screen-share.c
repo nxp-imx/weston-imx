@@ -891,8 +891,12 @@ shared_output_repainted(struct wl_listener *listener, void *data)
 
 	/* Get damage in output coordinates */
 	pixman_region32_init(&output_damage);
-	weston_region_global_to_output(&output_damage, so->output,
-				       global_output_damage);
+	if (use_g2d)
+		/* 2D no need global to output coordinate transform */
+		pixman_region32_copy(&output_damage, global_output_damage);
+	else
+		weston_region_global_to_output(&output_damage, so->output,
+					       global_output_damage);
 
 	if (shared_output_ensure_tmp_data(so, &output_damage) < 0)
 		goto err_pixman_init;
