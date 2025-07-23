@@ -309,6 +309,12 @@ weston_recorder_frame_notify(struct wl_listener *listener, void *data)
 	int do_yflip;
 	int y_orig;
 	uint32_t *outbuf;
+	bool use_g2d = false;
+
+#if defined(ENABLE_IMXG2D)
+	if (compositor->renderer->type == WESTON_RENDERER_G2D)
+		use_g2d = true;
+#endif
 
 	do_yflip = !!(compositor->capabilities & WESTON_CAP_CAPTURE_YFLIP);
 	if (do_yflip)
@@ -319,9 +325,13 @@ weston_recorder_frame_notify(struct wl_listener *listener, void *data)
 	pixman_region32_init(&damage);
 	pixman_region32_init(&transformed_damage);
 	pixman_region32_intersect(&damage, &output->region, data);
-	weston_region_global_to_output(&transformed_damage,
-				       output,
-				       &damage);
+	if (use_g2d)
+		/* 2D no need global to output coordinate transform */
+		pixman_region32_copy(&transformed_damage, &damage);
+	else
+		weston_region_global_to_output(&transformed_damage,
+					       output,
+					       &damage);
 	pixman_region32_fini(&damage);
 
 	r = pixman_region32_rectangles(&transformed_damage, &n);
@@ -343,11 +353,7 @@ weston_recorder_frame_notify(struct wl_listener *listener, void *data)
 		width = r[i].x2 - r[i].x1;
 		height = r[i].y2 - r[i].y1;
 
-#if defined(ENABLE_IMXG2D)
-		if (do_yflip && compositor->renderer->type != WESTON_RENDERER_G2D)
-#else
-		if (do_yflip)
-#endif
+		if (do_yflip && !use_g2d)
 			y_orig = output->current_mode->height - r[i].y2;
 		else
 			y_orig = r[i].y1;
