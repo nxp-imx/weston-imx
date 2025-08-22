@@ -120,6 +120,8 @@ struct g2d_output_state {
 	struct g2d_surfaceEx *drm_hw_buffer;
 	int width;
 	int height;
+	/* struct g2d_renderbuffer::link */
+	struct wl_list renderbuffer_list;
 };
 
 struct g2d_surface_state {
@@ -172,8 +174,22 @@ struct g2d_renderer {
 	struct weston_drm_format_array supported_formats;
 };
 
+struct g2d_renderbuffer {
+	struct weston_renderbuffer base;
+	struct wl_list link;
+};
+struct dmabuf_renderbuffer {
+	struct g2d_renderbuffer base;
+	struct g2d_renderer *gr;
+	/* The wrapped dmabuf memory */
+	struct linux_dmabuf_memory *dmabuf;
+};
+
 static int
 g2d_renderer_create_surface(struct weston_surface *surface);
+
+static void
+g2d_renderer_remove_renderbuffers(struct g2d_output_state *go);
 
 static inline struct g2d_surface_state *
 get_surface_state(struct weston_surface *surface)
@@ -1197,15 +1213,28 @@ g2d_renderer_repaint_output(struct weston_output *output,
 	pixman_region32_t buffer_damage, total_damage;
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	struct g2d_output_state *go = get_output_state(output);
+	struct g2d_renderbuffer *rb;
 #endif
 	int fence_fd = -1;
 
 	pixman_region32_init(&total_damage);
 	pixman_region32_init(&buffer_damage);
 
-	output_get_damage(output, &buffer_damage);
-	output_rotate_damage(output, output_damage);
-	pixman_region32_union(&total_damage, &buffer_damage, output_damage);
+#if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
+	if (renderbuffer && !wl_list_empty(&go->renderbuffer_list)) {
+		wl_list_for_each(rb, &go->renderbuffer_list, link)
+			pixman_region32_union(&buffer_damage,
+				&buffer_damage,
+				&rb->base.damage);
+		pixman_region32_union(&total_damage, &buffer_damage, output_damage);
+		pixman_region32_copy(&renderbuffer->damage, &total_damage);
+	} else
+#endif
+	{
+		output_get_damage(output, &buffer_damage);
+		output_rotate_damage(output, output_damage);
+		pixman_region32_union(&total_damage, &buffer_damage, output_damage);
+	}
 
 	repaint_views(output, &total_damage);
 
@@ -1632,6 +1661,7 @@ g2d_renderer_resize_output(struct weston_output *output,
 	struct g2d_output_state *go = get_output_state(output);
 
 	check_compositing_area(fb_size, area);
+	g2d_renderer_remove_renderbuffers(go);
 
 	go->fb_size = *fb_size;
 	go->area = *area;
@@ -2142,6 +2172,7 @@ g2d_renderer_output_destroy(struct weston_output *output)
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
 #endif
+	g2d_renderer_remove_renderbuffers (go);
 
 	free(go);
 }
@@ -2321,6 +2352,195 @@ create_default_dmabuf_feedback(struct weston_compositor *ec,
 	return 0;
 }
 
+struct g2d_renderer_dmabuf_memory {
+	struct linux_dmabuf_memory base;
+	void *user_data;
+};
+
+static void
+g2d_renderer_dmabuf_destroy(struct linux_dmabuf_memory *dmabuf)
+{
+	struct g2d_renderer_dmabuf_memory *g2d_renderer_dmabuf;
+	struct dmabuf_attributes *attributes;
+	int i;
+
+	g2d_renderer_dmabuf = (struct g2d_renderer_dmabuf_memory *)dmabuf;
+
+	attributes = dmabuf->attributes;
+	for (i = 0; i < attributes->n_planes; ++i)
+		close(attributes->fd[i]);
+	free(dmabuf->attributes);
+
+	g2d_free((struct g2d_buf*)(g2d_renderer_dmabuf->user_data));
+	free(g2d_renderer_dmabuf);
+}
+static struct linux_dmabuf_memory *
+g2d_renderer_dmabuf_alloc(struct weston_renderer *renderer,
+			 unsigned int width, unsigned int height,
+			 uint32_t format,
+			 const uint64_t *modifiers, const unsigned int count)
+{
+	enum g2d_format g2dFormat;
+	int bpp, buf_size, n_planes, i;
+	int stride[3] = {0,};
+	int offset[3] = {0,};
+	struct g2d_buf *pbuf = NULL;
+	struct g2d_renderer_dmabuf_memory *g2d_renderer_dmabuf;
+	struct linux_dmabuf_memory *dmabuf;
+	struct dmabuf_attributes *attributes;
+
+	if (!width | !height) {
+		return NULL;
+	}
+
+	g2d_renderer_get_g2dformat_from_dmabuf(format, &g2dFormat, &bpp);
+	switch (g2dFormat) {
+		case G2D_BGRX8888:
+		case G2D_RGBX8888:
+		case G2D_XRGB8888:
+		case G2D_XBGR8888:
+		case G2D_BGRA8888:
+		case G2D_RGBA8888:
+		case G2D_ARGB8888:
+		case G2D_ABGR8888:
+		case G2D_RGB565:
+		case G2D_BGR565:
+		case G2D_YUYV:
+		case G2D_UYVY:
+			buf_size = width * height * bpp;
+			stride[0] = width * bpp;
+			offset[0] = 0;
+			n_planes = 1;
+			break;
+		case G2D_NV12:
+		case G2D_NV21:
+			buf_size = width * height * 3 / 2;
+			stride[0] = width * bpp;
+			offset[0] = 0;
+			stride[1] = width * bpp;
+			offset[1] = stride[0] * height;
+			n_planes = 2;
+			break;
+		case G2D_NV16:
+			buf_size = width * height * 2;
+			stride[0] = width * bpp;
+			offset[0] = 0;
+			stride[1] = width * bpp;
+			offset[1] = stride[0] * height;
+			n_planes = 2;
+			break;
+		case G2D_I420:
+		case G2D_YV12:
+			buf_size = width * height * 3 / 2;
+			stride[0] = width * bpp;
+			offset[0] = 0;
+			stride[1] = width / 2;
+			offset[1] = stride[0] * height;
+			stride[2] = width / 2;
+			offset[2] = offset[1] + stride[1] * height;
+			n_planes = 3;
+			break;
+		default:
+			weston_log("warning: unknown buffer format: 0x%x\n", g2dFormat);
+			return NULL;
+	}
+
+	pbuf = g2d_alloc (buf_size, 0);
+	g2d_renderer_dmabuf = xzalloc(sizeof(*g2d_renderer_dmabuf));
+	g2d_renderer_dmabuf->user_data = (void *)pbuf;
+
+	attributes = xzalloc(sizeof(*attributes));
+	attributes->width = width;
+	attributes->height = height;
+	attributes->format = format;
+	attributes->n_planes = n_planes;
+	for (i = 0; i < attributes->n_planes; i++) {
+		attributes->fd[i] = g2d_buf_export_fd (pbuf);
+		attributes->stride[i] = stride[i];
+		attributes->offset[i] = offset[i];
+	}
+	attributes->modifier = *modifiers;
+
+	dmabuf = &g2d_renderer_dmabuf->base;
+	dmabuf->attributes = attributes;
+	dmabuf->destroy = g2d_renderer_dmabuf_destroy;
+
+	return dmabuf;
+}
+
+static inline struct g2d_renderbuffer *
+to_g2d_renderbuffer(struct weston_renderbuffer *renderbuffer)
+{
+	return container_of(renderbuffer, struct g2d_renderbuffer, base);
+}
+
+static inline struct dmabuf_renderbuffer *
+to_dmabuf_renderbuffer(struct g2d_renderbuffer *renderbuffer)
+{
+	return container_of(renderbuffer, struct dmabuf_renderbuffer, base);
+}
+
+static void
+g2d_renderer_dmabuf_renderbuffer_destroy(struct weston_renderbuffer *renderbuffer)
+{
+	struct g2d_renderbuffer *g2d_renderbuffer = to_g2d_renderbuffer(renderbuffer);
+	struct dmabuf_renderbuffer *dmabuf_renderbuffer = to_dmabuf_renderbuffer(g2d_renderbuffer);
+
+	pixman_region32_fini(&g2d_renderbuffer->base.damage);
+	/* Destroy the owned dmabuf */
+	dmabuf_renderbuffer->dmabuf->destroy(dmabuf_renderbuffer->dmabuf);
+	free(dmabuf_renderbuffer);
+}
+
+static struct weston_renderbuffer *
+g2d_renderer_create_renderbuffer_dmabuf(struct weston_output *output,
+				       struct linux_dmabuf_memory *dmabuf)
+{
+	struct g2d_renderer *gr = get_renderer(output->compositor);
+	struct g2d_output_state *go = get_output_state(output);
+	struct dmabuf_renderbuffer *rb;
+
+	rb = xzalloc(sizeof(*rb));
+	rb->gr = gr;
+	rb->dmabuf = dmabuf;
+
+	pixman_region32_init(&rb->base.base.damage);
+	/*
+	 * One reference is kept on the renderbuffer_list,
+	 * the other is returned to the calling backend.
+	 */
+	rb->base.base.refcount = 2;
+	rb->base.base.destroy = g2d_renderer_dmabuf_renderbuffer_destroy;
+	wl_list_insert(&go->renderbuffer_list, &rb->base.link);
+
+	return &rb->base.base;
+}
+
+static void
+g2d_renderer_remove_renderbuffer(struct g2d_renderbuffer *renderbuffer)
+{
+	wl_list_remove(&renderbuffer->link);
+	weston_renderbuffer_unref(&renderbuffer->base);
+}
+
+static void
+g2d_renderer_remove_renderbuffers(struct g2d_output_state *go)
+{
+	struct g2d_renderbuffer *renderbuffer, *tmp;
+
+	wl_list_for_each_safe(renderbuffer, tmp, &go->renderbuffer_list, link)
+		g2d_renderer_remove_renderbuffer(renderbuffer);
+}
+
+static void
+g2d_renderer_remove_renderbuffer_dmabuf(struct weston_output *output,
+				       struct weston_renderbuffer *renderbuffer)
+{
+	struct g2d_renderbuffer *g2d_renderbuffer = to_g2d_renderbuffer(renderbuffer);
+
+	g2d_renderer_remove_renderbuffer(g2d_renderbuffer);
+}
+
 static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
@@ -2339,6 +2559,9 @@ g2d_renderer_create(struct weston_compositor *ec)
 	gr->base.resize_output = g2d_renderer_resize_output;
 	gr->base.attach = g2d_renderer_attach;
 	gr->base.destroy = g2d_renderer_destroy;
+	gr->base.dmabuf_alloc = g2d_renderer_dmabuf_alloc;
+	gr->base.create_renderbuffer_dmabuf = g2d_renderer_create_renderbuffer_dmabuf;
+	gr->base.remove_renderbuffer_dmabuf = g2d_renderer_remove_renderbuffer_dmabuf;
 	gr->base.import_dmabuf = g2d_renderer_import_dmabuf;
 	gr->base.get_supported_formats = g2d_renderer_get_supported_formats;
 	gr->base.fill_buffer_info = g2d_renderer_fill_buffer_info;
@@ -2493,6 +2716,8 @@ g2d_renderer_output_create(struct weston_output *output,
 	go = zalloc(sizeof *go);
 	if (go == NULL)
 		return -1;
+
+	wl_list_init(&go->renderbuffer_list);
 	output->renderer_state = go;
 
 	for (i = 0; i < BUFFER_DAMAGE_COUNT; i++)

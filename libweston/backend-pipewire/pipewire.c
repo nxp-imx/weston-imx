@@ -60,6 +60,10 @@
 #include "pixman-renderer.h"
 #include "renderer-gl/gl-renderer.h"
 #include "shared/weston-egl-ext.h"
+#if defined(ENABLE_IMXG2D)
+#include "renderer-g2d/g2d-renderer.h"
+#include "shared/fd-util.h"
+#endif
 
 struct pipewire_backend {
 	struct weston_backend base;
@@ -93,6 +97,9 @@ struct pipewire_output {
 
 	struct wl_event_source *finish_frame_timer;
 	struct wl_list link;
+#if defined(ENABLE_IMXG2D)
+	pixman_region32_t previous_damage;
+#endif
 };
 
 struct pipewire_head {
@@ -104,6 +111,10 @@ struct pipewire_frame_data {
 	struct weston_renderbuffer *renderbuffer;
 	struct pipewire_memfd *memfd;
 	struct pipewire_dmabuf *dmabuf;
+
+#if defined(ENABLE_IMXG2D)
+	struct g2d_surfaceEx g2d_image;
+#endif
 };
 
 /* Pipewire default configuration for heads */
@@ -355,6 +366,43 @@ pipewire_output_disable_gl(struct pipewire_output *output)
 	renderer->gl->output_destroy(&output->base);
 }
 
+#if defined(ENABLE_IMXG2D)
+static int
+pipewire_output_enable_g2d(struct pipewire_output *output)
+{
+	struct pipewire_backend *b = output->backend;
+	struct weston_renderer *renderer = b->compositor->renderer;
+
+	const struct weston_size fb_size = {
+		output->base.current_mode->width,
+		output->base.current_mode->height
+	};
+
+	struct g2d_renderer_output_options options = {
+		.formats = output->pixel_format,
+		.formats_count = 1,
+		.area.x = 0,
+		.area.y = 0,
+		.area.width = fb_size.width,
+		.area.height = fb_size.height,
+		.fb_size.width = fb_size.width,
+		.fb_size.height = fb_size.height,
+	};
+
+	pixman_region32_init(&output->previous_damage);
+	return renderer->g2d->output_create(&output->base, &options);
+}
+
+static void
+pipewire_output_disable_g2d(struct pipewire_output *output)
+{
+	struct weston_renderer *renderer = output->base.compositor->renderer;
+
+	pixman_region32_fini(&output->previous_damage);
+	renderer->g2d->output_destroy(&output->base);
+}
+#endif
+
 static int
 pipewire_output_enable(struct weston_output *base)
 {
@@ -373,6 +421,11 @@ pipewire_output_enable(struct weston_output *base)
 	case WESTON_RENDERER_GL:
 		ret = pipewire_output_enable_gl(output);
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		ret = pipewire_output_enable_g2d(output);
+		break;
+#endif
 	default:
 		unreachable("Valid renderer should have been selected");
 	}
@@ -426,6 +479,11 @@ pipewire_output_disable(struct weston_output *base)
 	case WESTON_RENDERER_GL:
 		pipewire_output_disable_gl(output);
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		pipewire_output_disable_g2d(output);
+		break;
+#endif
 	default:
 		unreachable("Valid renderer should have been selected");
 	}
@@ -646,6 +704,58 @@ pipewire_output_stream_add_buffer_gl(struct pipewire_output *output,
 					format, width, height, ptr);
 }
 
+#if defined(ENABLE_IMXG2D)
+static struct weston_renderbuffer *
+pipewire_output_stream_add_buffer_g2d(struct pipewire_output *output,
+					 struct pw_buffer *buffer)
+{
+	struct weston_compositor *ec = output->base.compositor;
+	const struct weston_renderer *renderer = ec->renderer;
+	struct pipewire_frame_data *frame_data = buffer->user_data;
+	struct pipewire_dmabuf *dmabuf = frame_data->dmabuf;
+
+	if (dmabuf) {
+		struct g2d_surfaceEx* g2dSurface;
+		enum g2d_format g2dFormat;
+		struct spa_buffer *buf = buffer->buffer;
+		struct spa_data *d = buf->datas;
+		void *ptr = d[0].data;
+
+		g2dSurface = &(frame_data->g2d_image);
+		switch (output->pixel_format->format) {
+			case DRM_FORMAT_XRGB8888:
+				g2dFormat = G2D_BGRX8888;
+				break;
+			case DRM_FORMAT_ARGB8888:
+				g2dFormat = G2D_BGRA8888;
+				break;
+			case DRM_FORMAT_RGB565:
+				g2dFormat = G2D_RGB565;
+				break;
+			default:
+				weston_log("Unsupported format 0x%x\n", output->pixel_format->format);
+				goto out;
+		}
+
+		if (ec->renderer->g2d->create_g2d_image(g2dSurface, g2dFormat,
+				ptr,
+				output->base.width, output->base.height,
+				dmabuf->linux_dmabuf_memory->attributes->stride[0],
+				dmabuf->size,
+				dmabuf->linux_dmabuf_memory->attributes->fd[0]) < 0) {
+			weston_log("fail to create g2d image\n");
+			goto out;
+		}
+		return renderer->create_renderbuffer_dmabuf(&output->base,
+							    dmabuf->linux_dmabuf_memory);
+	}
+
+out:
+	pipewire_output_debug(output, "Can't add buffer because g2d render only support dma buf");
+	return NULL;
+}
+#endif
+
 struct pipewire_memfd {
 	int fd;
 	unsigned int size;
@@ -776,6 +886,11 @@ pipewire_output_stream_add_buffer(void *data, struct pw_buffer *buffer)
 	case WESTON_RENDERER_GL:
 		frame_data->renderbuffer = pipewire_output_stream_add_buffer_gl(output, buffer);
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		frame_data->renderbuffer = pipewire_output_stream_add_buffer_g2d(output, buffer);
+		break;
+#endif
 	default:
 		unreachable("Valid renderer should have been selected");
 	}
@@ -991,7 +1106,14 @@ pipewire_output_fence_sync_handler(int fd, uint32_t mask, void *data)
 		pipewire_submit_buffer(fence_data->output, fence_data->buffer);
 
 	wl_event_source_remove(fence_data->fence_sync_event_source);
-	close(fence_data->fence_sync_fd);
+#if defined(ENABLE_IMXG2D)
+	struct pipewire_output *output = fence_data->output;
+	struct weston_compositor *ec = output->base.compositor;
+	if (ec->renderer->type == WESTON_RENDERER_G2D)
+		fd_clear (&fence_data->fence_sync_fd);
+	else
+#endif
+		close(fence_data->fence_sync_fd);
 	wl_list_remove(&fence_data->link);
 	free(fence_data);
 
@@ -1008,7 +1130,14 @@ pipewire_schedule_submit_buffer(struct pipewire_output *output,
 	struct wl_event_loop *loop;
 	int fence_sync_fd;
 
-	fence_sync_fd = renderer->gl->create_fence_fd(&output->base);
+#if defined(ENABLE_IMXG2D)
+	struct pipewire_frame_data *frame_data;
+	frame_data = buffer->user_data;
+	if (ec->renderer->type == WESTON_RENDERER_G2D)
+		fence_sync_fd = dup(renderer->g2d->get_surface_fence_fd(&frame_data->g2d_image));
+	else
+#endif
+		fence_sync_fd = renderer->gl->create_fence_fd(&output->base);
 	if (fence_sync_fd == -1)
 		return -1;
 
@@ -1051,6 +1180,17 @@ pipewire_output_repaint(struct weston_output *base)
 		goto out;
 
 	weston_output_flush_damage_for_primary_plane(base, &damage);
+#if defined(ENABLE_IMXG2D)
+	if (ec->renderer->type == WESTON_RENDERER_G2D) {
+		pixman_region32_t previous_damage;
+
+		pixman_region32_init(&previous_damage);
+		pixman_region32_copy(&previous_damage, &damage);
+		pixman_region32_union(&damage, &damage, &output->previous_damage);
+		pixman_region32_copy(&output->previous_damage, &previous_damage);
+		pixman_region32_fini(&previous_damage);
+	}
+#endif
 
 	if (!pixman_region32_not_empty(&damage))
 		goto out;
@@ -1063,6 +1203,13 @@ pipewire_output_repaint(struct weston_output *base)
 	pipewire_output_debug(output, "dequeued buffer: %p", buffer);
 
 	frame_data = buffer->user_data;
+
+#if defined(ENABLE_IMXG2D)
+	if (ec->renderer->type == WESTON_RENDERER_G2D) {
+		ec->renderer->g2d->output_set_buffer(&output->base, &frame_data->g2d_image);
+	}
+#endif
+
 	if (frame_data->renderbuffer)
 		ec->renderer->repaint_output(&output->base, &damage, frame_data->renderbuffer);
 	else
@@ -1137,6 +1284,7 @@ pipewire_switch_mode(struct weston_output *base, struct weston_mode *target_mode
 	fb_size.height = target_mode->height;
 
 	weston_renderer_resize_output(base, &fb_size, NULL);
+	pixman_region32_fini(&output->previous_damage);
 
 	return 0;
 }
@@ -1352,6 +1500,17 @@ pipewire_backend_create(struct weston_compositor *compositor,
 							      &options.base);
 			break;
 		}
+#if defined(ENABLE_IMXG2D)
+		case WESTON_RENDERER_G2D:
+			weston_log("compositor has not initialized g2d render\n");
+			const struct g2d_renderer_display_options options = {
+				.native_window = NULL,
+			};
+			ret = weston_compositor_init_renderer(compositor,
+							      WESTON_RENDERER_G2D,
+							      &options.base);
+			break;
+#endif
 		default:
 			weston_log("Unsupported renderer requested\n");
 			goto err_compositor;
@@ -1417,6 +1576,9 @@ weston_backend_init(struct weston_compositor *compositor,
 		switch (compositor->renderer->type) {
 		case WESTON_RENDERER_PIXMAN:
 		case WESTON_RENDERER_GL:
+#if defined(ENABLE_IMXG2D)
+		case WESTON_RENDERER_G2D:
+#endif
 			break;
 		default:
 			weston_log("Renderer not supported by PipeWire backend\n");
