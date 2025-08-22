@@ -62,6 +62,9 @@
 #include "renderer-gl/gl-renderer.h"
 #include "renderer-vulkan/vulkan-renderer.h"
 #include "shared/weston-egl-ext.h"
+#if defined(ENABLE_IMXG2D)
+#include "renderer-g2d/g2d-renderer.h"
+#endif
 
 struct pipewire_backend {
 	struct weston_backend base;
@@ -390,6 +393,41 @@ pipewire_output_disable_vulkan(struct pipewire_output *output)
 	renderer->vulkan->output_destroy(&output->base);
 }
 
+#if defined(ENABLE_IMXG2D)
+static int
+pipewire_output_enable_g2d(struct pipewire_output *output)
+{
+	struct pipewire_backend *b = output->backend;
+	struct weston_renderer *renderer = b->compositor->renderer;
+
+	const struct weston_size fb_size = {
+		output->base.current_mode->width,
+		output->base.current_mode->height
+	};
+
+	struct g2d_renderer_output_options options = {
+		.formats = output->pixel_format,
+		.formats_count = 1,
+		.area.x = 0,
+		.area.y = 0,
+		.area.width = fb_size.width,
+		.area.height = fb_size.height,
+		.fb_size.width = fb_size.width,
+		.fb_size.height = fb_size.height,
+	};
+
+	return renderer->g2d->output_create(&output->base, &options);
+}
+
+static void
+pipewire_output_disable_g2d(struct pipewire_output *output)
+{
+	struct weston_renderer *renderer = output->base.compositor->renderer;
+
+	renderer->g2d->output_destroy(&output->base);
+}
+#endif
+
 static int
 pipewire_output_enable(struct weston_output *base)
 {
@@ -411,6 +449,11 @@ pipewire_output_enable(struct weston_output *base)
 	case WESTON_RENDERER_VULKAN:
 		ret = pipewire_output_enable_vulkan(output);
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		ret = pipewire_output_enable_g2d(output);
+		break;
+#endif
 	default:
 		unreachable("Valid renderer should have been selected");
 	}
@@ -470,6 +513,11 @@ pipewire_output_disable(struct weston_output *base)
 	case WESTON_RENDERER_VULKAN:
 		pipewire_output_disable_vulkan(output);
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		pipewire_output_disable_g2d(output);
+		break;
+#endif
 	default:
 		unreachable("Valid renderer should have been selected");
 	}
@@ -1010,6 +1058,13 @@ pipewire_schedule_submit_buffer(struct pipewire_output *output,
 		if (fence_sync_fd == -1)
 			return -1;
 		break;
+#if defined(ENABLE_IMXG2D)
+	case WESTON_RENDERER_G2D:
+		fence_sync_fd = renderer->g2d->create_surface_fence_fd(&output->base);
+		if (fence_sync_fd == -1)
+			return -1;
+		break;
+#endif
 	default:
 		unreachable("invalid renderer");
 	}
@@ -1395,6 +1450,18 @@ pipewire_backend_create(struct weston_compositor *compositor,
 							      &options.base);
 			break;
 		}
+#if defined(ENABLE_IMXG2D)
+		case WESTON_RENDERER_G2D: {
+			weston_log("compositor has not initialized g2d render\n");
+			const struct g2d_renderer_display_options options = {
+				.native_window = NULL,
+			};
+			ret = weston_compositor_init_renderer(compositor,
+							      WESTON_RENDERER_G2D,
+							      &options.base);
+			break;
+		}
+#endif
 		default:
 			weston_log("Unsupported renderer requested\n");
 			goto err_compositor;
@@ -1461,6 +1528,9 @@ weston_backend_init(struct weston_compositor *compositor,
 		case WESTON_RENDERER_PIXMAN:
 		case WESTON_RENDERER_GL:
 		case WESTON_RENDERER_VULKAN:
+#if defined(ENABLE_IMXG2D)
+		case WESTON_RENDERER_G2D:
+#endif
 			break;
 		default:
 			weston_log("Renderer not supported by PipeWire backend\n");
