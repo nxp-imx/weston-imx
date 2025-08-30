@@ -1596,7 +1596,7 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 
 	/* Only allocate a new g2d buff if it is larger than existing one.*/
 	gs->shm_buf_length = buffer_length;
-	if(gs->shm_buf && gs->shm_buf->buf_size > buffer_length)
+	if(gs->shm_buf && gs->shm_buf->buf_size >= buffer_length)
 	{
 		alloc_new_buff = 0;
 	}
