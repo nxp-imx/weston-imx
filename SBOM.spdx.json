@@ -1,0 +1,53 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2025-09-02T09:43:41Z",
+    "creators": [
+      "Organization: NXP"
+    ],
+    "licenseListVersion": "3.20"
+  },
+  "name": "weston-imx-LF_6.12.34_2.1.0",
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://nxp.com/spdx/1a96525d-de9f-403c-9620-9a0bddaf8813",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813",
+      "name": "weston-imx",
+      "versionInfo": "LF_6.12.34_2.1.0",
+      "licenseConcluded": "(MIT)",
+      "licenseDeclared": "(MIT)",
+      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.34-2.1.0",
+      "originator": "Organization: weston-imx",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-0e3daa0b-12d9-4792-b270-a24092c244c8",
+      "name": "Weston",
+      "versionInfo": "14.0.2",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "X11",
+      "homepage": "http://wayland.freedesktop.org/",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: Weston",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-package-0e3daa0b-12d9-4792-b270-a24092c244c8"
+    }
+  ]
+}
