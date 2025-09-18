@@ -1284,7 +1284,9 @@ pipewire_switch_mode(struct weston_output *base, struct weston_mode *target_mode
 	fb_size.height = target_mode->height;
 
 	weston_renderer_resize_output(base, &fb_size, NULL);
+#if defined(ENABLE_IMXG2D)
 	pixman_region32_fini(&output->previous_damage);
+#endif
 
 	return 0;
 }
