@@ -1160,6 +1160,7 @@ weston_compositor_init_config(struct weston_compositor *ec,
 	int repaint_msec;
 	bool color_management;
 	bool cal;
+	bool disable_input = false;
 
 	/* weston.ini [keyboard] */
 	s = weston_config_get_section(config, "keyboard", NULL, NULL);
@@ -1213,6 +1214,8 @@ weston_compositor_init_config(struct weston_compositor *ec,
 	if (cal)
 		weston_compositor_enable_touch_calibrator(ec,
 						save_touch_device_calibration);
+	weston_config_section_get_bool(s, "disable-input", &disable_input, false);
+	compositor->compositor->disable_input = disable_input;
 
 	return 0;
 }
