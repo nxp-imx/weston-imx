@@ -2,28 +2,16 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
-    "created": "2025-09-02T09:43:41Z",
+    "created": "2025-11-12T07:11:46Z",
     "creators": [
       "Organization: NXP"
     ],
     "licenseListVersion": "3.20"
   },
-  "name": "weston-imx-LF_6.12.34_2.1.0",
+  "name": "weston-imx-LF_6.12.49_2.2.0",
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://nxp.com/spdx/1a96525d-de9f-403c-9620-9a0bddaf8813",
+  "documentNamespace": "https://nxp.com/spdx/da1d2601-11b8-44b4-b215-0365c147ea00",
   "packages": [
-    {
-      "SPDXID": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813",
-      "name": "weston-imx",
-      "versionInfo": "LF_6.12.34_2.1.0",
-      "licenseConcluded": "(MIT)",
-      "licenseDeclared": "(MIT)",
-      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.34-2.1.0",
-      "originator": "Organization: weston-imx",
-      "supplier": "NOASSERTION",
-      "externalRefs": [],
-      "filesAnalyzed": false
-    },
     {
       "SPDXID": "SPDXRef-package-0e3daa0b-12d9-4792-b270-a24092c244c8",
       "name": "Weston",
@@ -36,18 +24,30 @@
       "supplier": "NOASSERTION",
       "externalRefs": [],
       "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-da1d2601-11b8-44b4-b215-0365c147ea00",
+      "name": "weston-imx",
+      "versionInfo": "LF_6.12.49_2.2.0",
+      "licenseConcluded": "(MIT)",
+      "licenseDeclared": "(MIT)",
+      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.49-2.2.0",
+      "originator": "Organization: weston-imx",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
     }
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-DOCUMENT",
-      "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813"
-    },
-    {
-      "spdxElementId": "SPDXRef-package-1a96525d-de9f-403c-9620-9a0bddaf8813",
+      "spdxElementId": "SPDXRef-package-da1d2601-11b8-44b4-b215-0365c147ea00",
       "relationshipType": "CONTAINS",
       "relatedSpdxElement": "SPDXRef-package-0e3daa0b-12d9-4792-b270-a24092c244c8"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-da1d2601-11b8-44b4-b215-0365c147ea00"
     }
   ]
 }
