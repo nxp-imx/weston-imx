@@ -2,28 +2,16 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
-    "created": "2025-08-24T08:21:46Z",
+    "created": "2025-11-12T07:11:22Z",
     "creators": [
       "Organization: NXP"
     ],
     "licenseListVersion": "3.20"
   },
-  "name": "weston-10-imx-LF_6.12.34_2.1.0",
+  "name": "weston-10-imx-LF_6.12.49_2.2.0",
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://nxp.com/spdx/43bc7b33-35a1-40a4-8ffe-56de7d2d2b87",
+  "documentNamespace": "https://nxp.com/spdx/e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
   "packages": [
-    {
-      "SPDXID": "SPDXRef-package-43bc7b33-35a1-40a4-8ffe-56de7d2d2b87",
-      "name": "weston-10-imx",
-      "versionInfo": "LF_6.12.34_2.1.0",
-      "licenseConcluded": "(MIT)",
-      "licenseDeclared": "(MIT)",
-      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.34-2.1.0-weston-10",
-      "originator": "Organization: weston-10-imx",
-      "supplier": "NOASSERTION",
-      "externalRefs": [],
-      "filesAnalyzed": false
-    },
     {
       "SPDXID": "SPDXRef-package-d01cb93c-d7c1-4b1c-bceb-7d30530a09f6",
       "name": "Weston",
@@ -42,18 +30,30 @@
         }
       ],
       "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
+      "name": "weston-10-imx",
+      "versionInfo": "LF_6.12.49_2.2.0",
+      "licenseConcluded": "(MIT)",
+      "licenseDeclared": "(MIT)",
+      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.49-2.2.0-weston-10",
+      "originator": "Organization: weston-10-imx",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
     }
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-DOCUMENT",
-      "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-package-43bc7b33-35a1-40a4-8ffe-56de7d2d2b87"
+      "spdxElementId": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-package-d01cb93c-d7c1-4b1c-bceb-7d30530a09f6"
     },
     {
-      "spdxElementId": "SPDXRef-package-43bc7b33-35a1-40a4-8ffe-56de7d2d2b87",
-      "relationshipType": "DYNAMIC_LINK",
-      "relatedSpdxElement": "SPDXRef-package-d01cb93c-d7c1-4b1c-bceb-7d30530a09f6"
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380"
     }
   ]
 }
