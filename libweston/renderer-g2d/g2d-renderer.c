@@ -1281,6 +1281,7 @@ g2d_renderer_repaint_output(struct weston_output *output,
 
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
 	go->drm_hw_buffer->reserved[0] = fence_fd;
+	go->drm_hw_buffer->reserved[1] = fence_fd;
 #endif
 
 	if(fence_fd == -1)
@@ -2207,6 +2208,7 @@ g2d_renderer_output_destroy(struct weston_output *output)
 
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
 	fd_clear(&go->drm_hw_buffer->reserved[0]);
+	go->drm_hw_buffer->reserved[1] = -1;
 #endif
 	g2d_renderer_discard_renderbuffers (go, true);
 	pixman_region32_fini(&go->previous_damage);
@@ -2755,7 +2757,9 @@ g2d_renderer_output_set_buffer(struct weston_output *output, struct g2d_surfaceE
 static int
 g2d_renderer_get_surface_fence_fd(struct g2d_surfaceEx *buffer)
 {
-	return buffer->reserved[0];
+	int fence_fd = buffer->reserved[1];
+	buffer->reserved[1] = -1;
+	return fence_fd;
 }
 
 static int
@@ -2823,6 +2827,7 @@ g2d_renderer_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 	g2dSurface->base.clrcolor = 0xFF400000;
 	g2dSurface->tiling = G2D_LINEAR;
 	g2dSurface->reserved[0] = -1;
+	g2dSurface->reserved[1] = -1;
 
 	return 0;
 }
