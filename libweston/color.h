@@ -647,6 +647,11 @@ struct weston_color_manager {
 	struct weston_output_color_outcome *
 	(*create_output_color_outcome)(struct weston_color_manager *cm,
 				       struct weston_output *output);
+
+	int
+	(*cm_get_hdr_data) (struct weston_color_manager *cm,
+					    struct weston_hdr_metadata_type1 *hdr_meta,
+						enum weston_eotf_mode *eotf_mode);
 };
 
 void
