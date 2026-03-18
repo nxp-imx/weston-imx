@@ -1184,6 +1184,74 @@ finish_frame:
 	return 0;
 }
 
+static int drm_ensure_hdr_output_metadata_blob_from_color_manager(struct drm_device *device)
+{
+	struct drm_output *output;
+	struct drm_head *head;
+	bool support_hdr = false;
+	struct weston_compositor *compositor = device->backend->compositor;
+	struct weston_color_manager *cm;
+	enum weston_eotf_mode eotf_mode = WESTON_EOTF_MODE_NONE;
+	struct weston_hdr_metadata_type1 hdr_data;
+	struct hdr_output_metadata meta;
+	int ret = 0;
+
+	wl_list_for_each(output, &compositor->output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->connector.props[WDRM_CONNECTOR_HDR_OUTPUT_METADATA].prop_id > 0)
+				support_hdr = true;
+		}
+	}
+
+	wl_list_for_each(output, &compositor->pending_output_list, base.link) {
+		wl_list_for_each(head, &output->base.head_list, base.output_link) {
+			if (head->connector.props[WDRM_CONNECTOR_HDR_OUTPUT_METADATA].prop_id > 0)
+				support_hdr = true;
+		}
+	}
+
+	if (support_hdr == false) {
+		return ret;
+	}
+
+	cm = compositor->color_manager;
+	if (!cm->cm_get_hdr_data) {
+		return ret;
+	}
+
+	ret = cm->cm_get_hdr_data (cm, &hdr_data, &eotf_mode);
+	if (ret < 0)
+		return ret;
+
+	switch (eotf_mode) {
+		case WESTON_EOTF_MODE_SDR:
+			device->clean_hdr_blob = true;
+			break;
+		case WESTON_EOTF_MODE_ST2084:
+			if (device->hdr_blob_id) {
+				break;
+			}
+
+			memset(&meta, 0, sizeof(struct hdr_output_metadata));
+			meta.metadata_type = 0;
+			meta.hdmi_metadata_type1.eotf = 2;
+			meta.hdmi_metadata_type1.metadata_type = 1;
+			weston_hdr_metadata_type1_to_kms(&meta.hdmi_metadata_type1, &hdr_data);
+			ret = drmModeCreatePropertyBlob(device->drm.fd,
+				&meta, sizeof(struct hdr_output_metadata), &device->hdr_blob_id);
+			if (ret != 0) {
+				weston_log("Error: failed to create KMS blob for HDR metadata: %s\n",
+					strerror(-ret));
+				ret = -1;
+			}
+			break;
+		default:
+			break;
+	}
+
+	return ret;
+}
+
 static void
 drm_repaint_begin_device(struct drm_device *device)
 {
@@ -1197,6 +1265,7 @@ drm_repaint_begin_device(struct drm_device *device)
 	if (weston_log_scope_is_enabled(b->debug))
 		drm_debug(b, "[repaint] Beginning repaint (%s); pending_state %p\n",
 			  device->drm.filename, device->repaint_data);
+	drm_ensure_hdr_output_metadata_blob_from_color_manager (device);
 }
 
 /**
@@ -4776,6 +4845,8 @@ drm_backend_create(struct weston_compositor *compositor,
 		goto err_backend;
 
 	device->recovery_status = DRM_RECOVERY_SCHEDULED;
+	device->clean_hdr_blob = false;
+	device->hdr_blob_id = 0;
 	device->drm.fd = -1;
 	device->backend = b;
 	device->gem_handle_refcnt = hash_table_create();

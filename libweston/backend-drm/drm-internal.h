@@ -227,6 +227,10 @@ struct drm_device {
 
 	bool fb_modifiers;
 
+	/* hdr10 metadata blob id */
+	unsigned int hdr_blob_id;
+	bool clean_hdr_blob;
+
 	/* we need these parameters in order to not fail drmModeAddFB2()
 	 * due to out of bounds dimensions, and then mistakenly set
 	 * sprites_are_broken:
@@ -876,6 +880,9 @@ drm_fb_get_from_bo(struct gbm_bo *bo, struct drm_device *device,
 void
 drm_output_set_cursor_view(struct drm_output *output, struct weston_view *ev);
 
+void
+weston_hdr_metadata_type1_to_kms(struct hdr_metadata_infoframe *dst,
+				 const struct weston_hdr_metadata_type1 *src);
 int
 drm_output_ensure_hdr_output_metadata_blob(struct drm_output *output);
 

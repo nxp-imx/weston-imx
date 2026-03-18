@@ -73,7 +73,7 @@ nits_to_u16_dark(float nits)
 	return (uint16_t)round(nits * 10000.0);
 }
 
-static void
+void
 weston_hdr_metadata_type1_to_kms(struct hdr_metadata_infoframe *dst,
 				 const struct weston_hdr_metadata_type1 *src)
 {
