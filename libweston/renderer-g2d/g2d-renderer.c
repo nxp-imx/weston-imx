@@ -46,6 +46,7 @@
 #include "g2d-renderer.h"
 #include "output-capture.h"
 #include "vertex-clipping.h"
+#include "color-representation.h"
 #include "linux-dmabuf.h"
 #include "linux-dmabuf-unstable-v1-server-protocol.h"
 #include "linux-explicit-synchronization.h"
@@ -131,6 +132,7 @@ struct g2d_surface_state {
 	int clcolor;
 	struct weston_buffer_reference buffer_ref;
 	struct weston_buffer_release_reference buffer_release_ref;
+	struct weston_color_representation color_representation;
 	int pitch; /* in pixels */
 	int attached;
 	pixman_region32_t texture_damage;
@@ -1167,6 +1169,17 @@ draw_view(struct weston_paint_node *pnode,
 	else
 		pixman_region32_copy(&surface_opaque, &pnode->surface->opaque);
 
+	switch (gs->color_representation.matrix_coefficients) {
+	case WESTON_COLOR_MATRIX_COEF_BT601:
+		g2d_enable(gr->handle, G2D_YUV_BT_601);
+		break;
+	case WESTON_COLOR_MATRIX_COEF_BT709:
+		g2d_enable(gr->handle, G2D_YUV_BT_709);
+		break;
+	default:
+		break;
+	}
+
 	if (pixman_region32_not_empty(&surface_opaque)) {
 		if (pnode->view->alpha < 1.0) {
 			g2d_enable(gr->handle, G2D_BLEND);
@@ -1189,6 +1202,17 @@ draw_view(struct weston_paint_node *pnode,
 		repaint_region(pnode, pnode->output, go, quads, nquads, &surface_blend);
 		g2d_disable(gr->handle, G2D_GLOBAL_ALPHA);
 		g2d_disable(gr->handle, G2D_BLEND);
+	}
+
+	switch (gs->color_representation.matrix_coefficients) {
+	case WESTON_COLOR_MATRIX_COEF_BT601:
+		g2d_disable(gr->handle, G2D_YUV_BT_601);
+		break;
+	case WESTON_COLOR_MATRIX_COEF_BT709:
+		g2d_disable(gr->handle, G2D_YUV_BT_709);
+		break;
+	default:
+		break;
 	}
 
 	if (quads)
@@ -1855,6 +1879,8 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 {
 	struct g2d_surface_state *gs = get_surface_state(es);
 	struct linux_dmabuf_buffer *dmabuf = buffer->dmabuf;
+	const struct pixel_format_info *info;
+	struct weston_color_representation color_rep;
 	int alignedWidth = 0;
 	enum g2d_format g2dFormat;
 	unsigned int *paddr;
@@ -1899,6 +1925,13 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 		gs->g2d_surface.tiling = G2D_LINEAR;
 	}
 	gs->g2d_surface.base.format = g2dFormat;
+
+	info = pixel_format_get_info(dmabuf->attributes.format);
+
+	weston_reset_color_representation(&color_rep);
+	color_rep = weston_fill_color_representation(&color_rep, info);
+
+	gs->color_representation = color_rep;
 }
 
 static void
