@@ -507,6 +507,16 @@ handle_touch_up(struct libinput_device *libinput_device,
 }
 
 static void
+handle_touch_cancel(struct libinput_device *libinput_device,
+		   struct libinput_event_touch *touch_event)
+{
+	struct evdev_device *device =
+		libinput_device_get_user_data(libinput_device);
+
+	notify_touch_cancel(device->touch_device);
+}
+
+static void
 handle_touch_frame(struct libinput_device *libinput_device,
 		   struct libinput_event_touch *touch_event)
 {
@@ -805,6 +815,11 @@ evdev_device_process_event(struct libinput_event *event)
 		handle_touch_up(libinput_device,
 				libinput_event_get_touch_event(event));
 		break;
+	case LIBINPUT_EVENT_TOUCH_CANCEL:
+		handle_touch_cancel(libinput_device,
+				libinput_event_get_touch_event(event));
+		break;
+
 	case LIBINPUT_EVENT_TOUCH_FRAME:
 		handle_touch_frame(libinput_device,
 				   libinput_event_get_touch_event(event));

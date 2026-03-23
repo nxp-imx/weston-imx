@@ -3139,6 +3139,9 @@ notify_touch_cancel(struct weston_touch_device *device)
 		notify_touch_calibrator_cancel(device);
 		break;
 	}
+	
+	weston_touch_set_focus(device->aggregate, NULL);
+	weston_touch_reset_state(device->aggregate);
 
 	weston_compositor_update_touch_mode(device->aggregate->seat->compositor);
 }
