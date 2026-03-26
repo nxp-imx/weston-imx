@@ -681,10 +681,12 @@ repaint_region(struct weston_paint_node *pnode,
 	struct g2d_surfaceEx *dstsurface = go->drm_hw_buffer;
 	struct g2d_surfaceEx srcsurface = gs->g2d_surface;
 	uint32_t view_transform = pnode->surface->buffer_viewport.buffer.transform;
-	int src_x = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_x);
-	int src_y = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_y);
+	int x = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_x);
+	int y = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_y);
 	int width = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_width);
 	int height = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_height);
+	int src_x = -1;
+	int src_y = -1;
 	int src_width = -1;
 	int src_height = -1;
 	int scale = pnode->surface->buffer_viewport.buffer.scale;
@@ -709,6 +711,58 @@ repaint_region(struct weston_paint_node *pnode,
 	}
 
 	convert_size_by_view_transform(&src_width, &src_height, width, height, view_transform);
+
+	/* Inverse operation to get original x/y value based on the transformation */
+	switch (view_transform) {
+		case WL_OUTPUT_TRANSFORM_NORMAL:
+			src_x = x;
+			src_y = y;
+			break;
+		case WL_OUTPUT_TRANSFORM_180:
+			//wp_src.x = priv->buffer_width - (priv->crop.w + priv->crop.x)
+			//wp_src.y = priv->buffer_height - (priv->crop.h + priv->crop.y)
+			src_x = gs->g2d_surface.base.width - src_width - x;
+			src_y = gs->g2d_surface.base.height - src_height - y;
+			break;
+		case WL_OUTPUT_TRANSFORM_FLIPPED:
+			//wp_src.x = priv->buffer_width - (priv->crop.w + priv->crop.x)
+			//wp_src.y = priv->crop.y
+			src_x = gs->g2d_surface.base.width - src_width - x;
+			src_y = y;
+			break;
+		case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+			//wp_src.x = priv->crop.x
+			//wp_src.y = priv->buffer_height - (priv->crop.h + priv->crop.y)
+			src_x = x;
+			src_y = gs->g2d_surface.base.height - src_height - y;
+			break;
+		case WL_OUTPUT_TRANSFORM_90:
+			//wp_src.x = priv->buffer_height - (priv->crop.h + priv->crop.y)
+			//wp_src.y = priv->crop.x
+			src_x = y;
+			src_y = gs->g2d_surface.base.height - src_height - x;
+			break;
+		case WL_OUTPUT_TRANSFORM_270:
+			//wp_src.x = priv->crop.y
+			//wp_src.y = priv->buffer_width - (priv->crop.w + priv->crop.x)
+			src_x = gs->g2d_surface.base.width - src_width - y;
+			src_y = x;
+			break;
+		case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+			//wp_src.x = priv->buffer_height - (priv->crop.h + priv->crop.y)
+			//wp_src.y = priv->buffer_width - (priv->crop.w + priv->crop.x)
+			src_x = gs->g2d_surface.base.width - src_width - y;
+			src_y = gs->g2d_surface.base.height - src_height - x;
+			break;
+		case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+			//wp_src.x = priv->crop.y
+			//wp_src.y = priv->crop.x
+			src_x = y;
+			src_y = x;
+			break;
+		default:
+			break;
+	}
 
 	rects = pixman_region32_rectangles(region, &nrects);
 	assert((nrects > 0) && (nquads > 0));
