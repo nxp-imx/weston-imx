@@ -113,6 +113,12 @@ typedef struct _g2dRECT
 	int bottom;
 } g2dRECT;
 
+struct g2d_dmabuf_info {
+	int num_planes;
+	int fds[3];
+	uint32_t offsets[3];
+};
+
 struct g2d_output_state {
 	int current_buffer;
 	struct weston_size fb_size;
@@ -137,6 +143,7 @@ struct g2d_surface_state {
 	int attached;
 	pixman_region32_t texture_damage;
 	struct g2d_surfaceEx g2d_surface;
+	struct g2d_dmabuf_info g2d_dmabuf;
 	struct g2d_buf *shm_buf;
 	struct g2d_buf *dma_buf;
 	int shm_buf_length;
@@ -415,14 +422,14 @@ get_g2dSurface(struct wl_viv_buffer *buffer, struct g2d_surfaceEx *g2dSurface)
 }
 
 static void
-g2d_SetSurfaceRect(struct g2d_surfaceEx* g2dSurface, g2dRECT* rect)
+g2d_SetSurfaceRect(struct g2d_surface* g2dSurface, g2dRECT* rect)
 {
 	if(g2dSurface && rect)
 	{
-		g2dSurface->base.left	= rect->left;
-		g2dSurface->base.top	= rect->top;
-		g2dSurface->base.right	= rect->right;
-		g2dSurface->base.bottom = rect->bottom;
+		g2dSurface->left   = rect->left;
+		g2dSurface->top    = rect->top;
+		g2dSurface->right  = rect->right;
+		g2dSurface->bottom = rect->bottom;
 	}
 }
 
@@ -435,7 +442,7 @@ g2d_clear_solid(void *handle, struct g2d_surfaceEx *dstG2dSurface, g2dRECT *clip
 {
 	struct g2d_surfaceEx* soildSurface = dstG2dSurface;
 
-	g2d_SetSurfaceRect(soildSurface, clipRect);
+	g2d_SetSurfaceRect(&soildSurface->base, clipRect);
 	soildSurface->base.clrcolor = clcolor;
 
 	if(g2d_clear(handle,  &soildSurface->base)){
@@ -449,8 +456,8 @@ static int
 g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_surfaceEx *dstG2dSurface,
 	g2dRECT *srcRect, g2dRECT *dstRect)
 {
-	g2d_SetSurfaceRect(srcG2dSurface, srcRect);
-	g2d_SetSurfaceRect(dstG2dSurface, dstRect);
+	g2d_SetSurfaceRect(&srcG2dSurface->base, srcRect);
+	g2d_SetSurfaceRect(&dstG2dSurface->base, dstRect);
 	srcG2dSurface->base.blendfunc = G2D_ONE;
 	dstG2dSurface->base.blendfunc = G2D_ONE_MINUS_SRC_ALPHA;
 	if(!(_hasAlpha(srcG2dSurface->base.format))){
@@ -462,6 +469,24 @@ g2d_blit_surface(void *handle, struct g2d_surfaceEx * srcG2dSurface, struct g2d_
 		printG2dSurfaceInfo(dstG2dSurface, "DST:");
 		return -1;
 	}
+	return 0;
+}
+
+static int
+g2d_blit_surface_dmabuf(void *handle, struct g2d_surface_dmabuf * srcG2dSurface, struct g2d_surface_dmabuf *dstG2dSurface,
+	g2dRECT *srcRect, g2dRECT *dstRect)
+{
+	g2d_SetSurfaceRect(&srcG2dSurface->base, srcRect);
+	g2d_SetSurfaceRect(&dstG2dSurface->base, dstRect);
+	srcG2dSurface->base.blendfunc = G2D_ONE;
+	dstG2dSurface->base.blendfunc = G2D_ONE_MINUS_SRC_ALPHA;
+	if(!(_hasAlpha(srcG2dSurface->base.format))){
+		g2d_disable(handle, G2D_BLEND);
+	}
+
+	if(g2d_blit_dmabuf(handle, srcG2dSurface, dstG2dSurface))
+		return -1;
+
 	return 0;
 }
 
@@ -682,6 +707,7 @@ repaint_region(struct weston_paint_node *pnode,
 	struct clipper_vertex *positions;
 	struct g2d_surfaceEx *dstsurface = go->drm_hw_buffer;
 	struct g2d_surfaceEx srcsurface = gs->g2d_surface;
+	struct g2d_surface_dmabuf src_dma, dst_dma;
 	uint32_t view_transform = pnode->surface->buffer_viewport.buffer.transform;
 	int x = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_x);
 	int y = wl_fixed_to_int (pnode->surface->buffer_viewport.buffer.src_y);
@@ -693,6 +719,9 @@ repaint_region(struct weston_paint_node *pnode,
 	int src_height = -1;
 	int scale = pnode->surface->buffer_viewport.buffer.scale;
 	const int nvtx_max = 8;
+	int hw_available = 0;
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_DPU_V2, &hw_available);
+
 	if (pnode->view->alpha < 1.0) {
 		/* Skip the render for global alpha, a workaround to disable the
 		   fade effect, it created garbage info in the sequence test.*/
@@ -875,6 +904,20 @@ repaint_region(struct weston_paint_node *pnode,
 			    buffer->type == WESTON_BUFFER_SOLID &&
 			    buffer->pixel_format->format !=DRM_FORMAT_ARGB8888) {
 				g2d_clear_solid(gr->handle, dstsurface, &clipRect, gs->clcolor);
+			}
+			else if (buffer && buffer->type == WESTON_BUFFER_DMABUF && hw_available == 1) {
+				src_dma.base = srcsurface.base;
+				for (int m = 0; m < gs->g2d_dmabuf.num_planes; m++) {
+					src_dma.plane_fd[m] = gs->g2d_dmabuf.fds[m];
+					src_dma.plane_offset[m] = gs->g2d_dmabuf.offsets[m];
+				}
+				dst_dma.base = dstsurface->base;
+				dst_dma.plane_fd[0] = dstsurface->reserved[2];
+				dst_dma.plane_offset[0] = 0;
+				if(g2d_blit_surface_dmabuf(gr->handle, &src_dma, &dst_dma, &srcRect, &dstrect) < 0) {
+					weston_log("G2D: dmabuf blit failed, fallback to default\n");
+					g2d_blit_surface(gr->handle, &srcsurface, dstsurface, &srcRect, &dstrect);
+				}
 			}
 			else
 			{
@@ -1891,6 +1934,13 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	if (!dmabuf)
 		return;
 
+	for (i = 0; i < gs->g2d_dmabuf.num_planes; i++) {
+		if (gs->g2d_dmabuf.fds[i] >= 0) {
+			close(gs->g2d_dmabuf.fds[i]);
+			gs->g2d_dmabuf.fds[i] = -1;
+		}
+	}
+
 	buffer->width = dmabuf->attributes.width;
 	buffer->height = dmabuf->attributes.height;
 	if(dmabuf->attributes.modifier == DRM_FORMAT_MOD_VIVANTE_SUPER_TILED ||
@@ -1926,6 +1976,12 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 		gs->g2d_surface.tiling = G2D_LINEAR;
 	}
 	gs->g2d_surface.base.format = g2dFormat;
+
+	gs->g2d_dmabuf.num_planes = dmabuf->attributes.n_planes;
+	for (i = 0; i < dmabuf->attributes.n_planes; i++) {
+		gs->g2d_dmabuf.fds[i] = dup(dmabuf->attributes.fd[i]);
+		gs->g2d_dmabuf.offsets[i] = dmabuf->attributes.offset[i];
+	}
 
 	info = pixel_format_get_info(dmabuf->attributes.format);
 
@@ -2188,6 +2244,13 @@ surface_state_destroy(struct g2d_surface_state *gs, struct g2d_renderer *gr)
 	{
 		g2d_free(gs->dma_buf);
 		gs->dma_buf = NULL;
+	}
+
+	for (int i = 0; i < gs->g2d_dmabuf.num_planes; i++) {
+		if (gs->g2d_dmabuf.fds[i] >= 0) {
+			close(gs->g2d_dmabuf.fds[i]);
+			gs->g2d_dmabuf.fds[i] = -1;
+		}
 	}
 
 	weston_buffer_reference(&gs->buffer_ref, NULL, BUFFER_WILL_NOT_BE_ACCESSED);
@@ -2916,6 +2979,7 @@ g2d_renderer_create_g2d_image(struct g2d_surfaceEx* g2dSurface,
 	g2dSurface->tiling = G2D_LINEAR;
 	g2dSurface->reserved[0] = -1;
 	g2dSurface->reserved[1] = -1;
+	g2dSurface->reserved[2] = dmafd;
 
 	return 0;
 }
