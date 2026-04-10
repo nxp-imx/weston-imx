@@ -1332,8 +1332,9 @@ g2d_renderer_repaint_output(struct weston_output *output,
 			}
 		}
 		pixman_region32_union(&total_damage, &buffer_damage, output_damage);
-		pixman_region32_copy(&rb->damage, &total_damage);
 		rb = (struct g2d_renderbuffer *) renderbuffer;
+		/* Update damage information into current render buffer */
+		pixman_region32_copy(&rb->damage, &total_damage);
 		g2d_renderer_output_set_buffer(output, &rb->g2dSurface);
 	} else
 #endif
