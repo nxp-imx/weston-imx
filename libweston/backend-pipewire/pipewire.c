@@ -277,12 +277,18 @@ pipewire_output_connect(struct pipewire_output *output)
 						   output->pixel_format->format,
 						   modifier);
 	}
-
-	params[i++] = spa_pod_build_format(&builder,
-					   output->base.current_mode->width,
-					   output->base.current_mode->height,
-					   output->base.current_mode->refresh / 1000,
-					   output->pixel_format->format, NULL);
+#if defined(ENABLE_IMXG2D)
+	/* Should not report this format because G2D renderer can't support MemFd buffer */
+	struct weston_renderer *renderer = output->base.compositor->renderer;
+	if (renderer->type != WESTON_RENDERER_G2D)
+#endif
+	{
+		params[i++] = spa_pod_build_format(&builder,
+							output->base.current_mode->width,
+							output->base.current_mode->height,
+							output->base.current_mode->refresh / 1000,
+							output->pixel_format->format, NULL);
+	}
 
 	ret = pw_stream_connect(output->stream, PW_DIRECTION_OUTPUT, PW_ID_ANY,
 				PW_STREAM_FLAG_DRIVER |
