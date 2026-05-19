@@ -2358,8 +2358,10 @@ g2d_renderer_output_destroy(struct weston_output *output)
 	}
 
 #if G2D_VERSION_MAJOR >= 2 && defined(BUILD_DRM_COMPOSITOR)
-	fd_clear(&go->drm_hw_buffer->reserved[0]);
-	go->drm_hw_buffer->reserved[1] = -1;
+	if (go->drm_hw_buffer) {
+		fd_clear(&go->drm_hw_buffer->reserved[0]);
+		go->drm_hw_buffer->reserved[1] = -1;
+	}
 #endif
 	g2d_renderer_discard_renderbuffers (go, true);
 	pixman_region32_fini(&go->previous_damage);
