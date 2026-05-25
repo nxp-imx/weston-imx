@@ -1545,6 +1545,16 @@ g2d_renderer_copy_shm_buffer(struct g2d_surface_state *gs, struct weston_buffer 
 			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
 			uv_dst_stride = alignedWidth;
 			break;
+		case WL_SHM_FORMAT_P010:
+			n_planes = 2;
+			height = ALIGN_TO_16(buffer->height);
+			plane_size[0] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height;
+			plane_size[1] = wl_shm_buffer_get_stride(buffer->shm_buffer)*buffer->height / 2;
+			src_plane_offset[1] = plane_size[0];
+			dst_plane_offset[1] = alignedWidth * height * 2;
+			uv_src_stride = wl_shm_buffer_get_stride(buffer->shm_buffer);
+			uv_dst_stride = alignedWidth * 2;
+			break;
 		case WL_SHM_FORMAT_YUV420:
 			n_planes = 3;
 			height = ALIGN_TO_16(buffer->height);
@@ -1763,6 +1773,12 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 		buffer_length = alignedWidth * height * 3/2;
 		gs->bpp = 1;
 		break;
+	case WL_SHM_FORMAT_P010:
+		g2dFormat = G2D_NV12_P010;
+		height = ALIGN_TO_16(buffer->height);
+		buffer_length = alignedWidth * height * 3;
+		gs->bpp = 2;
+		break;
 	default:
 		weston_log("warning: unknown shm buffer format: %08x\n",
 			   wl_shm_buffer_get_format(shm_buffer));
@@ -1788,7 +1804,7 @@ g2d_renderer_attach_shm(struct weston_surface *es, struct weston_buffer *buffer)
 			g2d_free(gs->shm_buf);
 		gs->shm_buf = g2d_alloc(buffer_length, 0);
 		gs->g2d_surface.base.planes[0] = gs->shm_buf->buf_paddr;
-		gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * height;
+		gs->g2d_surface.base.planes[1] = gs->g2d_surface.base.planes[0] + alignedWidth * height * gs->bpp; /* P010: 10-bit per component, stored as 2 bytes */
 		gs->g2d_surface.base.planes[2] = gs->g2d_surface.base.planes[1] + alignedWidth * height / 4;
 	}
 
@@ -1911,6 +1927,10 @@ g2d_renderer_get_g2dformat_from_dmabuf(uint32_t dmaformat,
 			*g2dFormat = G2D_YV12;
 			*bpp = 1;
 			break;
+		case DRM_FORMAT_P010:
+			*g2dFormat = G2D_NV12_P010;
+			*bpp = 2;
+			break;
 		default:
 			*g2dFormat = -1;
 			weston_log("warning: unknown dmabuf buffer format: %08x\n", dmaformat);
@@ -1991,46 +2011,81 @@ g2d_renderer_attach_dmabuf(struct weston_surface *es, struct  weston_buffer *buf
 	gs->color_representation = color_rep;
 }
 
+enum g2d_hw_cap {
+	G2D_CAP_PXP_V1  = (1U << 0),
+	G2D_CAP_PXP_V2  = (1U << 1),
+	G2D_CAP_DPU_V2  = (1U << 2),
+	G2D_CAP_DEFAULT = (1U << 3),
+};
+
 static void
 g2d_renderer_query_dmabuf_formats(struct weston_compositor *wc,
 			int **formats, int *num_formats)
 {
 	struct g2d_renderer *gr = get_renderer(wc);
-	int hardware_v1_available, hardware_v2_available, g2d_offset = 0;
-	int num;
-	static const int dma_formats[] = {
-		DRM_FORMAT_ARGB8888,
-		DRM_FORMAT_XRGB8888,
-		DRM_FORMAT_RGB565,
-		DRM_FORMAT_YUYV,
-		DRM_FORMAT_UYVY,
-		DRM_FORMAT_NV12,
-		DRM_FORMAT_NV16,
-		DRM_FORMAT_NV21,
-		DRM_FORMAT_YUV420,
-		DRM_FORMAT_YVU420,
-		DRM_FORMAT_ABGR8888,
-		DRM_FORMAT_BGRA8888,
-		DRM_FORMAT_RGBA8888,
-		DRM_FORMAT_XBGR8888,
-		DRM_FORMAT_BGRX8888,
-		DRM_FORMAT_RGBX8888,
+	int pxp_v1 = 0, pxp_v2 = 0, dpu_v2 = 0;
+	int num = 0, idx = 0;
+	uint32_t hw_caps = G2D_CAP_DEFAULT;
+
+	static const struct {
+		int drm_format;
+		uint32_t supported_by;
+	} format_caps[] = {
+		/* supported by default */
+		{ DRM_FORMAT_ARGB8888,},
+		{ DRM_FORMAT_XRGB8888,},
+		{ DRM_FORMAT_RGB565,},
+		{ DRM_FORMAT_YUYV,},
+		{ DRM_FORMAT_UYVY,},
+		{ DRM_FORMAT_NV12,},
+		{ DRM_FORMAT_NV16,},
+		{ DRM_FORMAT_NV21,},
+		{ DRM_FORMAT_YUV420,},
+		{ DRM_FORMAT_YVU420,},
+
+		/* not supported by PXP_V1 */
+		{ DRM_FORMAT_ABGR8888, ~G2D_CAP_PXP_V1 },
+		{ DRM_FORMAT_BGRA8888, ~G2D_CAP_PXP_V1 },
+		{ DRM_FORMAT_RGBA8888, ~G2D_CAP_PXP_V1 },
+		{ DRM_FORMAT_XBGR8888, ~G2D_CAP_PXP_V1 },
+
+		/* not supported by PXP_V1 and PXP_V2 */
+		{ DRM_FORMAT_BGRX8888, ~(G2D_CAP_PXP_V1 | G2D_CAP_PXP_V2) },
+		{ DRM_FORMAT_RGBX8888, ~(G2D_CAP_PXP_V1 | G2D_CAP_PXP_V2) },
+
+		/* only supported by DPU_V2 */
+		{ DRM_FORMAT_P010,     G2D_CAP_DPU_V2 },
 	};
 
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
-	if(hardware_v1_available == 1) {
-		g2d_offset = 6;
-	}
-	else if(hardware_v2_available == 1) {
-		g2d_offset = 2;
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &pxp_v1);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &pxp_v2);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_DPU_V2, &dpu_v2);
+
+	if (pxp_v1)
+		hw_caps = G2D_CAP_PXP_V1;
+	else if (pxp_v2)
+		hw_caps = G2D_CAP_PXP_V2;
+	else if (dpu_v2)
+		hw_caps = G2D_CAP_DPU_V2;
+
+	for (size_t i = 0; i < ARRAY_LENGTH(format_caps); i++) {
+		uint32_t caps = format_caps[i].supported_by ? format_caps[i].supported_by : ~0U;
+		if (caps & hw_caps)
+			num++;
 	}
 
-	num = ARRAY_LENGTH(dma_formats) - g2d_offset;
 	*formats = calloc(num, sizeof(int));
-	memcpy(*formats, dma_formats, num * sizeof(int));
-
+	if (*formats == NULL) {
+		*num_formats = 0;
+		return;
+	}
 	*num_formats = num;
+
+	for (size_t i = 0; i < ARRAY_LENGTH(format_caps); i++) {
+		uint32_t caps = format_caps[i].supported_by ? format_caps[i].supported_by : ~0U;
+		if (caps & hw_caps)
+			(*formats)[idx++] = format_caps[i].drm_format;
+	}
 }
 
 static void
@@ -2752,7 +2807,7 @@ static int
 g2d_renderer_create(struct weston_compositor *ec)
 {
 	struct g2d_renderer *gr;
-	int hardware_v1_available, hardware_v2_available = 0;
+	int pxp_v1 = 0, pxp_v2 = 0, dpu_v2 = 0;
 
 	gr = calloc(1, sizeof *gr);
 	if (gr == NULL)
@@ -2805,11 +2860,12 @@ g2d_renderer_create(struct weston_compositor *ec)
 	ec->capabilities |= WESTON_CAP_CAPTURE_YFLIP;
 	ec->capabilities |= WESTON_CAP_VIEW_CLIP_MASK;
 
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &hardware_v1_available);
-	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &hardware_v2_available);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V1, &pxp_v1);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_PXP_V2, &pxp_v2);
+	g2d_query_hardware(gr->handle, G2D_HARDWARE_DPU_V2, &dpu_v2);
 
 	/* Configure read format to PIXMAN_x8r8g8b8 for pxp device */
-	if (hardware_v1_available == 1) {
+	if (pxp_v1 == 1) {
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_x8r8g8b8);
 	} else {
 		ec->read_format = pixel_format_get_info_by_pixman(PIXMAN_a8r8g8b8);
@@ -2823,16 +2879,18 @@ g2d_renderer_create(struct weston_compositor *ec)
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_NV21);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_YUYV);
 	wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_UYVY);
-	if(hardware_v1_available != 1 && hardware_v2_available != 1) {
+	if (pxp_v1 != 1 && pxp_v2 != 1) {
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRX8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBX8888);
 	}
-	if(hardware_v1_available != 1) {
+	if (pxp_v1 != 1) {
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_BGRA8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_RGBA8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_ABGR8888);
 		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_XBGR8888);
 	}
+	if (dpu_v2 == 1)
+		wl_display_add_shm_format(ec->wl_display, WL_SHM_FORMAT_P010);
 
 	wl_signal_init(&gr->destroy_signal);
 
