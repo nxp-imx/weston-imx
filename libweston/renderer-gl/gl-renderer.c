@@ -5049,6 +5049,13 @@ gl_renderer_display_create(struct weston_compositor *ec,
 	/* Register supported wl_shm YUV formats. */
 	for (i = 0; i < (int) ARRAY_LENGTH(yuv_formats); i++) {
 		supported = true;
+
+		/* WL_SHM_FORMAT_YUV444 should be removed because
+		 * JPEG decoder only support packed YUV444.
+		 */
+		if (yuv_formats[i].format == WL_SHM_FORMAT_YUV444)
+			continue;
+
 		for (j = 0; j < yuv_formats[i].output_planes; j++) {
 			info = pixel_format_get_info(yuv_formats[i].plane[j].format);
 			if (info->gl.internal == 0 ||
