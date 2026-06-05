@@ -1,0 +1,76 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "creationInfo": {
+    "created": "2026-06-02T03:02:20Z",
+    "creators": [
+      "Organization: NXP"
+    ],
+    "licenseListVersion": "3.26"
+  },
+  "name": "weston-imx-lf-6.18.20-2.0.0",
+  "dataLicense": "CC0-1.0",
+  "hasExtractedLicensingInfos": [
+    {
+      "name": "Expat License",
+      "licenseId": "LicenseRef-19bd4215-a4d4-4ffe-8e54-fcd9558d4e96",
+      "extractedText": "Expat License\n=============\n\nCopyright (c) 1998, 1999, 2000 Thai Open Source Software Center Ltd\n                               and Clark Cooper\nCopyright (c) 2001, 2002, 2003, 2004, 2005, 2006 Expat maintainers.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of\nthis software and associated documentation files (the \"Software\"), to deal in the\nSoftware without restriction, including without limitation the rights to use,\ncopy, modify, merge, publish, distribute, sublicense, and/or sell copies of the\nSoftware, and to permit persons to whom the Software is furnished to do so,\nsubject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS\nFOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR\nCOPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN\nAN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION\nWITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."
+    }
+  ],
+  "documentNamespace": "https://nxp.com/spdx/957be40f-7add-45f3-a762-f66429c236f8",
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8",
+      "name": "weston-imx",
+      "versionInfo": "lf-6.18.20-2.0.0",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.18.20-2.0.0",
+      "originator": "Organization: NXP (MIT)                              Weston (MIT) - http://github.com/wayland-project/weston/",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8---db80156f-b126-44a1-a548-e02ebda94db7",
+      "name": "Weston",
+      "versionInfo": "15.0.1",
+      "licenseConcluded": "LicenseRef-19bd4215-a4d4-4ffe-8e54-fcd9558d4e96",
+      "licenseDeclared": "LicenseRef-19bd4215-a4d4-4ffe-8e54-fcd9558d4e96",
+      "homepage": "http://wayland.freedesktop.org/",
+      "downloadLocation": "NOASSERTION",
+      "originator": "Organization: debian",
+      "supplier": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "OTHER",
+          "referenceLocator": "6d49bee1-8588-498b-ab21-9df07254d4c7",
+          "referenceType": "BlackDuck-ComponentOrigin"
+        },
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:deb/debian/weston@15.0.1-1",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8---db80156f-b126-44a1-a548-e02ebda94db7"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8",
+      "relationshipType": "DYNAMIC_LINK",
+      "relatedSpdxElement": "SPDXRef-package-957be40f-7add-45f3-a762-f66429c236f8---db80156f-b126-44a1-a548-e02ebda94db7"
+    }
+  ]
+}
