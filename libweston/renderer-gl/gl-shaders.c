@@ -240,13 +240,14 @@ create_shader_description_string(const struct gl_shader_requirements *req)
 	int size;
 	char *str;
 
-	size = asprintf(&str, "%s %s %s %s %s %s %cinput_is_premult %ctint",
+	size = asprintf(&str, "%s %s %s %s %s %s %cswz %cinput_is_premult %ctint",
 			gl_shader_texcoord_input_to_string(req->texcoord_input),
 			gl_shader_texture_variant_to_string(req->variant),
 			gl_shader_color_effect_to_string(req->color_effect),
 			gl_shader_color_curve_to_string(req->color_pre_curve),
 			gl_shader_color_mapping_to_string(req->color_mapping),
 			gl_shader_color_curve_to_string(req->color_post_curve),
+			req->swizzle_idx ? '+' : '-',
 			req->input_is_premult ? '+' : '-',
 			req->tint ? '+' : '-');
 	if (size < 0)
@@ -279,6 +280,7 @@ create_fragment_shader_config_string(const struct gl_shader_requirements *req)
 
 	size = asprintf(&str,
 			"#define MAX_CURVE_PARAMS %zu\n"
+			"#define DEF_NEED_SWIZZLE_IDX %s\n"
 			"#define DEF_TINT %s\n"
 			"#define DEF_INPUT_IS_PREMULT %s\n"
 			"#define DEF_WIREFRAME %s\n"
@@ -288,6 +290,7 @@ create_fragment_shader_config_string(const struct gl_shader_requirements *req)
 			"#define DEF_COLOR_EFFECT %s\n"
 			"#define DEF_VARIANT %s\n",
 			ARRAY_LENGTH(((union weston_color_curve_parametric_chan_data){}).data),
+			req->swizzle_idx ? "true" : "false",
 			req->tint ? "true" : "false",
 			req->input_is_premult ? "true" : "false",
 			req->wireframe ? "true" : "false",
@@ -850,7 +853,8 @@ gl_shader_load_config(struct gl_renderer *gr,
 					swizzle_sub[j] = (float) swizzles[j];
 				}
 			}
-			glUniform4iv(shader->swizzle_idx[i], 1, swizzle_idx);
+			if (shader->swizzle_idx[i] != -1)
+				glUniform4iv(shader->swizzle_idx[i], 1, swizzle_idx);
 			glUniform4fv(shader->swizzle_mask[i], 1, swizzle_mask);
 			glUniform4fv(shader->swizzle_sub[i], 1, swizzle_sub);
 		}
@@ -886,14 +890,53 @@ gl_shader_load_config(struct gl_renderer *gr,
 	glActiveTexture(GL_TEXTURE0);
 }
 
+static bool
+is_zero_one_chan(GLint x, GLint chan)
+{
+	return x == GL_ZERO || x == GL_ONE || x == chan;
+}
+
+static bool
+textures_need_swizzle_idx(const struct gl_renderer *gr,
+			  const struct gl_texture_parameters *tp,
+			  int tp_num)
+{
+	int i;
+
+	/* If GL supports swizzling natively, we don't need it in the shader. */
+	if (gr->gl_version >= gl_version(3, 0))
+		return false;
+
+	/* If any swizzle need a texture channel value from a different
+	 * channel, we need it in the shader.
+	 */
+	for (i = 0; i < tp_num; i++) {
+		if (!is_zero_one_chan(tp[i].swizzles.r, GL_RED) ||
+		    !is_zero_one_chan(tp[i].swizzles.g, GL_GREEN) ||
+		    !is_zero_one_chan(tp[i].swizzles.b, GL_BLUE) ||
+		    !is_zero_one_chan(tp[i].swizzles.a, GL_ALPHA))
+			return true;
+	}
+
+	/* Everything can be handled with masking, no need. */
+	return false;
+}
+
 bool
 gl_renderer_use_program(struct gl_renderer *gr,
 			const struct gl_shader_config *sconf)
 {
 	static const GLfloat fallback_shader_color[4] = { 0.2, 0.1, 0.0, 1.0 };
+	struct gl_shader_requirements req = sconf->req;
 	struct gl_shader *shader;
 
-	shader = gl_renderer_get_program(gr, &sconf->req);
+	/*
+	 * In order to avoid a performance penalty on Vivante GC NanoUltra,
+	 * skip the shader swizzle if possible.
+	 */
+	req.swizzle_idx = textures_need_swizzle_idx(gr, sconf->input_param, sconf->input_num);
+
+	shader = gl_renderer_get_program(gr, &req);
 	if (!shader) {
 		weston_log("Error: failed to generate shader program.\n");
 		gr->current_shader = NULL;

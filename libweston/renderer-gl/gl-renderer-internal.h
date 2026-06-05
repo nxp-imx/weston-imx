@@ -295,6 +295,7 @@ struct gl_shader_requirements
 	bool input_is_premult:1;
 	bool tint:1;
 	bool wireframe:1;
+	bool swizzle_idx:1;
 
 	unsigned color_effect:2; /* enum gl_shader_color_effect */
 
@@ -306,7 +307,7 @@ struct gl_shader_requirements
 	 * The total size of all bitfields plus pad_bits_ must fill up exactly
 	 * how many bytes the compiler allocates for them together.
 	 */
-	unsigned pad_bits_:14;
+	unsigned pad_bits_:13;
 };
 static_assert(sizeof(struct gl_shader_requirements) ==
 	      4 /* total bitfield size in bytes */,

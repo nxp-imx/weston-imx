@@ -85,6 +85,7 @@ compile_const int c_color_mapping = DEF_COLOR_MAPPING;
 compile_const int c_color_post_curve = DEF_COLOR_POST_CURVE;
 compile_const int c_color_effect = DEF_COLOR_EFFECT;
 
+compile_const bool c_need_swizzle_idx = DEF_NEED_SWIZZLE_IDX;
 compile_const bool c_input_is_premult = DEF_INPUT_IS_PREMULT;
 compile_const bool c_tint = DEF_TINT;
 compile_const bool c_wireframe = DEF_WIREFRAME;
@@ -174,10 +175,12 @@ texture2D_swizzle(sampler2D sampler, int unit, vec2 coord)
 	vec4 color = texture2D(sampler, coord);
 
 	/* Swizzle components. */
-	color = vec4(color[swizzle_idx[unit].x],
-		     color[swizzle_idx[unit].y],
-		     color[swizzle_idx[unit].z],
-		     color[swizzle_idx[unit].w]);
+	if (c_need_swizzle_idx) {
+		color = vec4(color[swizzle_idx[unit].x],
+			     color[swizzle_idx[unit].y],
+			     color[swizzle_idx[unit].z],
+			     color[swizzle_idx[unit].w]);
+	}
 
 	/* Substitute with 0 or 1. */
 	return color * swizzle_mask[unit] + swizzle_sub[unit];
