@@ -714,11 +714,6 @@ fbdev_head_create(struct fbdev_backend *backend, const char *device)
 	}
 	close(fb_fd);
 
-	if (!strcmp(head->fb_info.id, "mxc_epdc_fb")) {
-		weston_log("mxc_epdc_fb was not supported by weston.\n");
-		goto out_free;
-	}
-
 	weston_head_init(&head->base, device);
 	weston_head_set_connection_status(&head->base, true);
 	weston_head_set_monitor_strings(&head->base, "unknown",
@@ -948,7 +943,7 @@ find_framebuffer_device(struct fbdev_backend *b, const char *seat)
 {
 	struct udev_enumerate *e;
 	struct udev_list_entry *entry;
-	const char *path, *device_seat, *id;
+	const char *path, *device_seat, *id, *fb_name;
 	char *fb_device_path = NULL;
 	struct udev_device *device, *fb_device, *pci;
 
@@ -971,6 +966,15 @@ find_framebuffer_device(struct fbdev_backend *b, const char *seat)
 		if (strcmp(device_seat, seat)) {
 			udev_device_unref(device);
 			continue;
+		}
+
+		/* Bypass mxc_epdc_fb which is not supported by weston*/
+		fb_name = udev_device_get_sysattr_value(device, "name");
+		if (fb_name) {
+			if (!strcmp(fb_name, "mxc_epdc_fb")) {
+				udev_device_unref(device);
+				continue;
+			}
 		}
 
 		pci = udev_device_get_parent_with_subsystem_devtype(device,
