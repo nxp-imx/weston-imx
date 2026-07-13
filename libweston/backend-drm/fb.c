@@ -457,7 +457,6 @@ drm_fb_get_from_dmabuf_attributes(struct dmabuf_attributes *attributes,
 	struct drm_fb *fb;
 	int i;
 	uint32_t gem_handle[MAX_DMABUF_PLANES] = {0};
-	struct linux_dmabuf_buffer *dmabuf = container_of(attributes, struct linux_dmabuf_buffer, attributes);
 	struct gbm_import_fd_modifier_data import_mod = {
 		.width = attributes->width,
 		.height = attributes->height,
@@ -548,20 +547,41 @@ bo_import_skip:
 	}
 
 	fb->num_planes = attributes->n_planes;
-	if (dmabuf->gem_handles[0] == 0) {
+
+	/* For internal renderbuffers, attributes is standalone heap memory,
+	 * not embedded in linux_dmabuf_buffer; use drmPrimeFDToHandle directly.
+	 * For client dmabufs, recover the parent via container_of and use
+	 * the cached gem_handles[]. */
+	if (is_internal) {
 		for (i = 0; i < attributes->n_planes; i++) {
 			int ret;
-			ret = drmPrimeFDToHandle (fb->fd, attributes->fd[i], &gem_handle[i]);
+			ret = drmPrimeFDToHandle(fb->fd, attributes->fd[i], &gem_handle[i]);
 			if (ret) {
-				weston_log ("got gem_handle %x\n", gem_handle[i]);
+				weston_log("drmPrimeFDToHandle failed for plane %d: %s\n",
+					   i, strerror(errno));
 				goto err_free;
 			}
-			fb->handles[i] = dmabuf->gem_handles[i] = gem_handle[i];
+			fb->handles[i] = gem_handle[i];
 		}
-		linux_dmabuf_buffer_gem_handle_close_cb (dmabuf, drm_close_gem_handle);
 	} else {
-		for (i = 0; i < attributes->n_planes; i++)
-			fb->handles[i] = dmabuf->gem_handles[i];
+		struct linux_dmabuf_buffer *dmabuf =
+			container_of(attributes, struct linux_dmabuf_buffer, attributes);
+
+		if (dmabuf->gem_handles[0] == 0) {
+			for (i = 0; i < attributes->n_planes; i++) {
+				int ret;
+				ret = drmPrimeFDToHandle (fb->fd, attributes->fd[i], &gem_handle[i]);
+				if (ret) {
+					weston_log ("got gem_handle %x\n", gem_handle[i]);
+					goto err_free;
+				}
+				fb->handles[i] = dmabuf->gem_handles[i] = gem_handle[i];
+			}
+			linux_dmabuf_buffer_gem_handle_close_cb (dmabuf, drm_close_gem_handle);
+		} else {
+			for (i = 0; i < attributes->n_planes; i++)
+				fb->handles[i] = dmabuf->gem_handles[i];
+		}
 	}
 
 	if (fb->handles[0] != 0)
