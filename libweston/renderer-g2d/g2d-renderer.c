@@ -2,7 +2,7 @@
  * Copyright (c) 2016 Freescale Semiconductor, Inc.
  * Copyright © 2012 Intel Corporation
  * Copyright © 2015 Collabora, Ltd.
- * Copyright 2018 NXP
+ * Copyright 2018, 2020-2026 NXP
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -2163,19 +2163,23 @@ g2d_renderer_import_dmabuf(struct weston_compositor *wc,
 		if (g2dBuf)
 			g2d_free(g2dBuf);
 		g2dBuf = g2d_buf_from_fd(dmabuf->attributes.fd[i]);
-		if(!g2dBuf)
-			return false;
+		if (!g2dBuf)
+			goto err_free_paddr;
 		paddr[i] = g2dBuf->buf_paddr;
 	}
 
-	if(!g2dBuf)
-		return false;
+	if (!g2dBuf)
+		goto err_free_paddr;
 	else
 		g2d_free(g2dBuf);
 
 	linux_dmabuf_buffer_set_user_data(dmabuf, (void *)paddr, free_paddr_buf);
 
 	return true;
+
+err_free_paddr:
+	free(paddr);
+	return false;
 }
 
 static const struct weston_drm_format_array *

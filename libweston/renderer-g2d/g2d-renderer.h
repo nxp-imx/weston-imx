@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2015 Freescale Semiconductor, Inc.
  * Copyright © 2013 Vasily Khoruzhick <anarsoul@gmail.com>
+ * Copyright 2020-2021, 2024-2025 NXP
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
