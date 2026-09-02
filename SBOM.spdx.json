@@ -2,43 +2,37 @@
   "SPDXID": "SPDXRef-DOCUMENT",
   "spdxVersion": "SPDX-2.3",
   "creationInfo": {
-    "created": "2025-11-12T07:11:22Z",
+    "created": "2026-08-25T03:51:21Z",
     "creators": [
       "Organization: NXP"
     ],
-    "licenseListVersion": "3.20"
+    "licenseListVersion": "3.28"
   },
-  "name": "weston-10-imx-LF_6.12.49_2.2.0",
+  "name": "weston-10-imx-lf-6.18.37-2.1.0",
   "dataLicense": "CC0-1.0",
-  "documentNamespace": "https://nxp.com/spdx/e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
+  "documentNamespace": "https://nxp.com/spdx/19b4fec2-a5c9-46d7-bec2-bfdb3dc78854",
   "packages": [
     {
-      "SPDXID": "SPDXRef-package-d01cb93c-d7c1-4b1c-bceb-7d30530a09f6",
+      "SPDXID": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854",
+      "name": "weston-10-imx",
+      "versionInfo": "lf-6.18.37-2.1.0",
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.18.37-2.1.0-weston-10",
+      "originator": "Organization: NXP (MIT)                              Weston (MIT) - http://github.com/wayland-project/weston/",
+      "supplier": "NOASSERTION",
+      "externalRefs": [],
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854---d01cb93c-d7c1-4b1c-bceb-7d30530a09f6",
       "name": "Weston",
       "versionInfo": "10.0.5",
       "licenseConcluded": "MIT",
       "licenseDeclared": "NOASSERTION",
       "homepage": "http://wayland.freedesktop.org/",
       "downloadLocation": "NOASSERTION",
-      "originator": "Organization: freedesktop_org",
-      "supplier": "NOASSERTION",
-      "externalRefs": [
-        {
-          "referenceCategory": "OTHER",
-          "referenceLocator": "0c58a7aa-1756-4e8c-b8b7-395f1293da8f",
-          "referenceType": "BlackDuck-ComponentOrigin"
-        }
-      ],
-      "filesAnalyzed": false
-    },
-    {
-      "SPDXID": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
-      "name": "weston-10-imx",
-      "versionInfo": "LF_6.12.49_2.2.0",
-      "licenseConcluded": "(MIT)",
-      "licenseDeclared": "(MIT)",
-      "downloadLocation": "https://github.com/nxp-imx/weston-imx -b lf-6.12.49-2.2.0-weston-10",
-      "originator": "Organization: weston-10-imx",
+      "originator": "Organization: unknown",
       "supplier": "NOASSERTION",
       "externalRefs": [],
       "filesAnalyzed": false
@@ -46,14 +40,19 @@
   ],
   "relationships": [
     {
-      "spdxElementId": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380",
-      "relationshipType": "CONTAINS",
-      "relatedSpdxElement": "SPDXRef-package-d01cb93c-d7c1-4b1c-bceb-7d30530a09f6"
-    },
-    {
       "spdxElementId": "SPDXRef-DOCUMENT",
       "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-package-e3fd139a-8613-4cf9-a5c7-3dca1fd3f380"
+      "relatedSpdxElement": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854---d01cb93c-d7c1-4b1c-bceb-7d30530a09f6"
+    },
+    {
+      "spdxElementId": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854",
+      "relationshipType": "DYNAMIC_LINK",
+      "relatedSpdxElement": "SPDXRef-package-19b4fec2-a5c9-46d7-bec2-bfdb3dc78854---d01cb93c-d7c1-4b1c-bceb-7d30530a09f6"
     }
   ]
 }
